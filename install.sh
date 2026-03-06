@@ -5,7 +5,7 @@
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.4.0"
+VERSION="1.5.0"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
