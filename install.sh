@@ -41,13 +41,11 @@ if [ "$IS_UPDATE" = true ]; then
     curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover && chmod +x /usr/local/bin/dnstt-failover
     curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt && chmod +x /usr/local/bin/winnet-dnstt
     [ -f "/root/dnstt-client-linux-amd64" ] && chmod +x /root/dnstt-client-linux-amd64
-
     cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
 [Unit]
 Description=DNSTT-DNS-Changer
 After=network.target network-online.target
 Wants=network-online.target
-
 [Service]
 Type=simple
 User=root
@@ -61,7 +59,6 @@ TimeoutStopSec=10
 KillMode=mixed
 KillSignal=SIGTERM
 SendSIGKILL=yes
-
 [Install]
 WantedBy=multi-user.target
 SVCEOF
@@ -71,7 +68,6 @@ SVCEOF
     echo -e "${WHITE}[3/3] Starting...${NC}"
     systemctl start "$SERVICE" 2>/dev/null; sleep 3
     systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ winnet-dnstt${NC}"
-
     echo ""
     echo -e "${GREEN}  ✓ Updated to v$VERSION | CLI: ${WHITE}winnet-dnstt${NC}"
     exit 0
@@ -79,15 +75,16 @@ fi
 
 # ═══ NEW INSTALL ═══
 
-echo -e "${WHITE}[1/6] Dependencies...${NC}"
+echo -e "${WHITE}[1/7] Dependencies...${NC}"
 if command -v apt-get &>/dev/null; then
-    apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq curl wget >/dev/null 2>&1
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y -qq curl wget dnsutils >/dev/null 2>&1
 elif command -v yum &>/dev/null; then
-    yum install -y -q curl wget >/dev/null 2>&1
+    yum install -y -q curl wget bind-utils >/dev/null 2>&1
 fi
 echo -e "  ${GREEN}✓${NC}"
 
-echo -e "${WHITE}[2/6] Files...${NC}"
+echo -e "${WHITE}[2/7] Files...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ]; then
     chmod +x /root/dnstt-client-linux-amd64
     echo -e "  ${GREEN}✓ dnstt-client + chmod${NC}"
@@ -96,62 +93,89 @@ else
 fi
 [ -f "/root/pub.key" ] && echo -e "  ${GREEN}✓ pub.key${NC}" || echo -e "  ${RED}✗ Upload pub.key to /root/${NC}"
 
-echo -e "${WHITE}[3/6] Config...${NC}"
+echo -e "${WHITE}[3/7] Downloading config from GitHub...${NC}"
 mkdir -p "$INSTALL_DIR"
-SKIP_CONF=false
-[ -f "$INSTALL_DIR/config.conf" ] && { echo -ne "  ${YELLOW}Config exists. Overwrite? (y/n): ${NC}"; read -r ow; [ "$ow" != "y" ] && SKIP_CONF=true; }
+if [ -f "$INSTALL_DIR/config.conf" ]; then
+    echo -ne "  ${YELLOW}Config exists. Overwrite? (y/n): ${NC}"; read -r ow
+    if [ "$ow" = "y" ]; then
+        curl -sL "$REPO/config.conf" -o "$INSTALL_DIR/config.conf"
+        echo -e "  ${GREEN}✓ Downloaded from GitHub${NC}"
+    else
+        echo -e "  ${GREEN}✓ Kept existing${NC}"
+    fi
+else
+    curl -sL "$REPO/config.conf" -o "$INSTALL_DIR/config.conf"
+    echo -e "  ${GREEN}✓ Downloaded from GitHub${NC}"
+fi
 
-if [ "$SKIP_CONF" = false ]; then
-    echo -e "  ${CYAN}Enter DNS servers. Empty = done:${NC}"
-    echo ""
-    DNS_L=(); DOM_L=(); N=1
-    while true; do
-        echo -ne "  ${WHITE}Server $N (ip:port or Enter=done): ${NC}"; read -r di
-        [ -z "$di" ] && { [ ${#DNS_L[@]} -eq 0 ] && { echo -e "  ${RED}Need 1!${NC}"; continue; } || break; }
-        echo -ne "  ${WHITE}Domain: ${NC}"; read -r dm
-        [ -z "$dm" ] && { echo -e "  ${RED}Required!${NC}"; continue; }
-        DNS_L+=("$di"); DOM_L+=("$dm")
-        echo -e "  ${GREEN}✓${NC}"; N=$((N+1))
-    done
+echo -e "${WHITE}[4/7] Customize config...${NC}"
+echo ""
+echo -e "  ${CYAN}Enter DNS servers. Empty = done:${NC}"
+echo -e "  ${GRAY}(Or press Enter to keep defaults from GitHub)${NC}"
+echo ""
+
+DNS_L=(); DOM_L=(); N=1
+while true; do
+    echo -ne "  ${WHITE}Server $N (ip:port or Enter=done): ${NC}"; read -r di
+    if [ -z "$di" ]; then
+        break
+    fi
+    echo -ne "  ${WHITE}Domain: ${NC}"; read -r dm
+    [ -z "$dm" ] && { echo -e "  ${RED}Required!${NC}"; continue; }
+    DNS_L+=("$di"); DOM_L+=("$dm")
+    echo -e "  ${GREEN}✓${NC}"; N=$((N+1))
+done
+
+# If user entered servers, update config
+if [ ${#DNS_L[@]} -gt 0 ]; then
     echo ""
     echo -ne "  ${WHITE}SOCKS5 port [1080]: ${NC}"; read -r sp; sp=${sp:-1080}
     echo -ne "  ${WHITE}Protocol (udp/dot) [udp]: ${NC}"; read -r pr; pr=${pr:-udp}
 
+    # Read existing config for other values
+    source "$INSTALL_DIR/config.conf" 2>/dev/null
+
     cat > "$INSTALL_DIR/config.conf" << CONFEOF
-# DNSTT-DNS-Changer Config $(date)
+# DNSTT-DNS-Changer Configuration v1.8.0
+# Generated: $(date)
+
 DNS_SERVERS=(
 $(for s in "${DNS_L[@]}"; do echo "    \"$s\""; done)
 )
+
 DOMAINS=(
 $(for d in "${DOM_L[@]}"; do echo "    \"$d\""; done)
 )
+
 BINARY="/root/dnstt-client-linux-amd64"
 PUBKEY_FILE="/root/pub.key"
 LOCAL_LISTEN="127.0.0.1:$sp"
 PROTOCOL="$pr"
-MAX_FAILURES=3
-ALL_FAILED_WAIT=30
-AUTO_RESTART_CHECK=10
-AUTO_RESTART_MAX_TRIES=3
-SOCKS_TEST_ENABLED=false
-SOCKS_TEST_URL="http://www.google.com"
-SOCKS_TEST_TIMEOUT=15
+AUTO_RESTART_CHECK=${AUTO_RESTART_CHECK:-15}
+MAX_FAILURES=${MAX_FAILURES:-2}
+ALL_FAILED_WAIT=${ALL_FAILED_WAIT:-30}
+AUTO_RESTART_ENABLED=${AUTO_RESTART_ENABLED:-true}
+AUTO_RESTART_MAX_TRIES=${AUTO_RESTART_MAX_TRIES:-3}
+SOCKS_TEST_ENABLED=${SOCKS_TEST_ENABLED:-false}
+SOCKS_TEST_URL="${SOCKS_TEST_URL:-http://www.google.com}"
+SOCKS_TEST_TIMEOUT=${SOCKS_TEST_TIMEOUT:-15}
 CONFEOF
-    echo -e "  ${GREEN}✓ Saved (port: $sp)${NC}"
+    echo -e "  ${GREEN}✓ Config customized (port: $sp)${NC}"
+else
+    echo -e "  ${GREEN}✓ Using GitHub defaults${NC}"
 fi
 
-echo -e "${WHITE}[4/6] Scripts...${NC}"
+echo -e "${WHITE}[5/7] Scripts...${NC}"
 curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover && chmod +x /usr/local/bin/dnstt-failover
 curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt && chmod +x /usr/local/bin/winnet-dnstt
 echo -e "  ${GREEN}✓${NC}"
 
-echo -e "${WHITE}[5/6] Service...${NC}"
+echo -e "${WHITE}[6/7] Service...${NC}"
 cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
 [Unit]
 Description=DNSTT-DNS-Changer
 After=network.target network-online.target
 Wants=network-online.target
-
 [Service]
 Type=simple
 User=root
@@ -165,14 +189,13 @@ TimeoutStopSec=10
 KillMode=mixed
 KillSignal=SIGTERM
 SendSIGKILL=yes
-
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 systemctl daemon-reload; systemctl enable "$SERVICE" >/dev/null 2>&1
 echo -e "  ${GREEN}✓${NC}"
 
-echo -e "${WHITE}[6/6] Start...${NC}"
+echo -e "${WHITE}[7/7] Start...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ] && [ -f "/root/pub.key" ]; then
     echo -ne "  ${WHITE}Start? (y/n): ${NC}"; read -r sn
     [ "$sn" = "y" ] && { systemctl start "$SERVICE"; sleep 3; systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠${NC}"; }
@@ -181,6 +204,13 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}  ✓ Installed! CLI: ${WHITE}winnet-dnstt${NC}"
-echo -e "${YELLOW}  Files needed: /root/dnstt-client-linux-amd64 + /root/pub.key${NC}"
+echo -e "${GREEN}  ╔══════════════════════════════════════╗"
+echo -e "  ║    ✓ Installation Complete!           ║"
+echo -e "  ╠══════════════════════════════════════╣"
+echo -e "  ║  CLI: ${WHITE}winnet-dnstt${GREEN}                   ║"
+echo -e "  ╠══════════════════════════════════════╣"
+echo -e "  ║  ${YELLOW}Files needed in /root/:${GREEN}             ║"
+echo -e "  ║  ${WHITE}  dnstt-client-linux-amd64${GREEN}          ║"
+echo -e "  ║  ${WHITE}  pub.key${GREEN}                           ║"
+echo -e "  ╚══════════════════════════════════════╝${NC}"
 echo ""
