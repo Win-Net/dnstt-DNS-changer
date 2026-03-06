@@ -1,111 +1,187 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v1.6.0 - Stable Failover
+# DNSTT-DNS-Changer v1.7.0 - Real Connection Check
 # https://github.com/Win-Net/dnstt-DNS-changer
 #
 # Logic:
-# 1. Start dnstt-client on DNS server #1
-# 2. Monitor: is the process alive?
-# 3. If process dies → switch to NEXT DNS → restart
-# 4. Never touch a working process
+# 1. Start dnstt on DNS #1
+# 2. Every X seconds: test if SOCKS actually works
+# 3. If not working → kill → next DNS → start
 # ═══════════════════════════════════════════════════════════
 
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 
-if [ ! -f "$CONFIG_FILE" ]; then echo "[FATAL] Config not found"; exit 1; fi
+if [ ! -f "$CONFIG_FILE" ]; then echo "[FATAL] No config"; exit 1; fi
 source "$CONFIG_FILE"
 
-if [ ${#DNS_SERVERS[@]} -eq 0 ]; then echo "[FATAL] No DNS servers"; exit 1; fi
-if [ ${#DNS_SERVERS[@]} -ne ${#DOMAINS[@]} ]; then echo "[FATAL] Mismatch"; exit 1; fi
-if [ ! -f "$BINARY" ]; then echo "[FATAL] No binary: $BINARY"; exit 1; fi
+[ ${#DNS_SERVERS[@]} -eq 0 ] && { echo "[FATAL] No servers"; exit 1; }
+[ ${#DNS_SERVERS[@]} -ne ${#DOMAINS[@]} ] && { echo "[FATAL] Mismatch"; exit 1; }
+[ ! -f "$BINARY" ] && { echo "[FATAL] No binary"; exit 1; }
 [ ! -x "$BINARY" ] && chmod +x "$BINARY"
-if [ ! -f "$PUBKEY_FILE" ]; then echo "[FATAL] No key: $PUBKEY_FILE"; exit 1; fi
+[ ! -f "$PUBKEY_FILE" ] && { echo "[FATAL] No key"; exit 1; }
 
 IDX=0
 TOTAL=${#DNS_SERVERS[@]}
 TAG="dnstt-DNS-changer"
 SWITCHES=0
-CHECK=${AUTO_RESTART_CHECK:-10}
+RESTARTS=0
+CHECK=${AUTO_RESTART_CHECK:-15}
+FAILS=0
+MAX_FAIL=${MAX_FAILURES:-2}
+PORT="${LOCAL_LISTEN##*:}"
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$1] $2"; logger -t "$TAG" "$1: $2" 2>/dev/null; }
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$1] $2"
+    logger -t "$TAG" "$1: $2" 2>/dev/null
+}
 
-get_port() { echo "${LOCAL_LISTEN##*:}"; }
-
-# Clean kill everything
 nuke() {
     pkill -9 -f "dnstt-client" 2>/dev/null
     sleep 1
-    local port=$(get_port)
-    if command -v fuser &>/dev/null; then fuser -k ${port}/tcp 2>/dev/null; fi
+    command -v fuser &>/dev/null && fuser -k ${PORT}/tcp 2>/dev/null
     sleep 1
-    # wait port free
     local i=0
-    while ss -tlnp 2>/dev/null | grep -q ":${port}" && [ $i -lt 10 ]; do sleep 1; i=$((i+1)); done
+    while ss -tlnp 2>/dev/null | grep -q ":${PORT}" && [ $i -lt 10 ]; do
+        sleep 1; i=$((i+1))
+    done
 }
 
-# Start dnstt-client directly (not as background of background)
-run() {
+start() {
     local dns="${DNS_SERVERS[$IDX]}"
     local domain="${DOMAINS[$IDX]}"
     log "INFO" "========================================"
-    log "INFO" "Starting [$((IDX+1))/$TOTAL] DNS: $dns Domain: $domain"
+    log "INFO" "Starting [$((IDX+1))/$TOTAL] DNS=$dns Domain=$domain"
     log "INFO" "========================================"
 
     nuke
+    sleep 2
 
     if [ "${PROTOCOL:-udp}" = "dot" ]; then
-        exec_cmd="$BINARY -dot $dns -pubkey-file $PUBKEY_FILE $domain $LOCAL_LISTEN"
+        $BINARY -dot "$dns" -pubkey-file "$PUBKEY_FILE" "$domain" "$LOCAL_LISTEN" &
     else
-        exec_cmd="$BINARY -udp $dns -pubkey-file $PUBKEY_FILE $domain $LOCAL_LISTEN"
+        $BINARY -udp "$dns" -pubkey-file "$PUBKEY_FILE" "$domain" "$LOCAL_LISTEN" &
     fi
-
-    # Run dnstt-client and wait for it to exit
-    $exec_cmd &
     DNSTT_PID=$!
-    log "INFO" "Process started PID=$DNSTT_PID"
-    
-    # Wait for process to die (this blocks!)
-    wait $DNSTT_PID 2>/dev/null
-    EXIT_CODE=$?
-    
-    log "ERROR" "Process $DNSTT_PID exited with code $EXIT_CODE"
-    return $EXIT_CODE
+    sleep 5
+
+    if ! kill -0 $DNSTT_PID 2>/dev/null; then
+        log "ERROR" "Process died immediately"
+        DNSTT_PID=0
+        return 1
+    fi
+    log "INFO" "Running PID=$DNSTT_PID"
+    return 0
 }
 
-# Next DNS
-next() {
+# Real connection test - actually try to use the SOCKS proxy
+is_alive() {
+    # Test 1: Process exists?
+    if [ $DNSTT_PID -eq 0 ] || ! kill -0 $DNSTT_PID 2>/dev/null; then
+        log "WARNING" "Process dead"
+        return 1
+    fi
+
+    # Test 2: Port open?
+    if ! ss -tlnp 2>/dev/null | grep -q ":${PORT}"; then
+        log "WARNING" "Port $PORT closed"
+        return 1
+    fi
+
+    # Test 3: Actually send data through SOCKS
+    # Try to connect through the proxy - this is the REAL test
+    if command -v curl &>/dev/null; then
+        if timeout 10 curl -s --socks5 "$LOCAL_LISTEN" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+            return 0
+        fi
+        # Try second URL if first fails
+        if timeout 10 curl -s --socks5 "$LOCAL_LISTEN" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+            return 0
+        fi
+        log "WARNING" "SOCKS not responding"
+        return 1
+    fi
+
+    # No curl, just check port
+    return 0
+}
+
+next_dns() {
     local old="${DNS_SERVERS[$IDX]}"
     IDX=$(( (IDX + 1) % TOTAL ))
     SWITCHES=$((SWITCHES + 1))
-    log "SWITCH" "DNS changed: $old -> ${DNS_SERVERS[$IDX]} (switch #$SWITCHES)"
+    log "SWITCH" "$old -> ${DNS_SERVERS[$IDX]} (switch #$SWITCHES)"
 }
 
-# Shutdown handler
-trap 'log "INFO" "Shutdown..."; nuke; exit 0' SIGTERM SIGINT SIGHUP
+trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # ═══ MAIN ═══
-log "INFO" "DNSTT-DNS-Changer v1.6.0 | Servers: $TOTAL | Check: ${CHECK}s"
+log "INFO" "v1.7.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
+# Make sure curl is installed
+if ! command -v curl &>/dev/null; then
+    log "WARNING" "Installing curl for connection testing..."
+    apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null
+fi
+
+start
 FAILS=0
 
 while true; do
-    # Run and WAIT for it to die
-    run
+    sleep "$CHECK"
 
-    # Process died, go to NEXT dns first, then restart
-    FAILS=$((FAILS + 1))
-    log "ERROR" "Connection lost! Fail #$FAILS"
+    # Reload config
+    source "$CONFIG_FILE" 2>/dev/null
+    CHECK=${AUTO_RESTART_CHECK:-15}
+    MAX_FAIL=${MAX_FAILURES:-2}
 
-    # Switch to next DNS
-    next
-
-    # If we tried all servers, wait longer
-    if [ $((FAILS % TOTAL)) -eq 0 ]; then
-        local wait_time=${ALL_FAILED_WAIT:-30}
-        [ $FAILS -ge $((TOTAL * 3)) ] && wait_time=60
-        log "ERROR" "All $TOTAL servers tried. Waiting ${wait_time}s..."
-        sleep $wait_time
+    if is_alive; then
+        # Working fine
+        [ $FAILS -gt 0 ] && log "INFO" "Recovered after $FAILS fails"
+        FAILS=0
     else
-        sleep 3
+        FAILS=$((FAILS + 1))
+        log "ERROR" "NOT WORKING! Fail $FAILS/$MAX_FAIL on ${DNS_SERVERS[$IDX]}"
+
+        if [ $FAILS -ge $MAX_FAIL ]; then
+            # Switch to next DNS and restart
+            log "ERROR" "Switching DNS and restarting..."
+            next_dns
+            RESTARTS=$((RESTARTS + 1))
+
+            if start; then
+                # Give it time to establish connection
+                sleep 10
+                if is_alive; then
+                    log "INFO" "New DNS working!"
+                    FAILS=0
+                    continue
+                fi
+            fi
+
+            # This DNS also failed, try all others
+            local tried=1
+            while [ $tried -lt $TOTAL ]; do
+                next_dns
+                RESTARTS=$((RESTARTS + 1))
+                if start; then
+                    sleep 10
+                    if is_alive; then
+                        log "INFO" "Connected on ${DNS_SERVERS[$IDX]}"
+                        FAILS=0
+                        break
+                    fi
+                fi
+                tried=$((tried + 1))
+            done
+
+            # All failed
+            if [ $tried -ge $TOTAL ]; then
+                log "ERROR" "ALL $TOTAL servers failed! Waiting 30s..."
+                sleep 30
+                FAILS=0
+            else
+                FAILS=0
+            fi
+        fi
     fi
 done
