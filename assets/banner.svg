@@ -29,7 +29,7 @@
   <text x="400" y="200" text-anchor="middle" fill="url(#accent)" font-family="monospace" font-size="36" font-weight="bold">DNSTT-DNS-Changer</text>
   <text x="400" y="235" text-anchor="middle" fill="#8888aa" font-family="monospace" font-size="15">Automatic DNS Failover for DNSTT Tunnel</text>
   <rect x="345" y="248" width="55" height="22" fill="#00d2ff" rx="11"/>
-  <text x="372" y="263" text-anchor="middle" fill="#0f0c29" font-family="monospace" font-size="11" font-weight="bold">v1.8.0</text>
+  <text x="372" y="263" text-anchor="middle" fill="#0f0c29" font-family="monospace" font-size="11" font-weight="bold">v1.9.0</text>
   <text x="150" y="310" fill="#00d2ff" font-family="monospace" font-size="13">Auto Failover</text>
   <text x="340" y="310" fill="#00d2ff" font-family="monospace" font-size="13">Health Check</text>
   <text x="540" y="310" fill="#00d2ff" font-family="monospace" font-size="13">CLI Dashboard</text>
