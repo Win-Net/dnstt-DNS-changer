@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.3.0
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.4.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -36,17 +36,22 @@ show_banner() {
 
 get_status() { systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && echo "active" || echo "inactive"; }
 
+load_config() {
+    DNS_SERVERS=()
+    DOMAINS=()
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    fi
+}
+
 show_status_bar() {
     local s=$(get_status)
     [ "$s" = "active" ] && echo -e "  ${WHITE}Service: ${GREEN}● RUNNING${NC}" || echo -e "  ${WHITE}Service: ${RED}● STOPPED${NC}"
     [ ! -f "/root/dnstt-client-linux-amd64" ] && echo -e "  ${RED}⚠ Missing: /root/dnstt-client-linux-amd64${NC}"
     [ ! -f "/root/pub.key" ] && echo -e "  ${RED}⚠ Missing: /root/pub.key${NC}"
-    # Show auto-restart status
-    if [ -f "$CONFIG_FILE" ]; then
-        source "$CONFIG_FILE" 2>/dev/null
-        local ar=${AUTO_RESTART_ENABLED:-false}
-        [ "$ar" = "true" ] && echo -e "  ${WHITE}Auto-Restart: ${GREEN}● ON${NC} (every ${AUTO_RESTART_CHECK:-20}s)" || echo -e "  ${WHITE}Auto-Restart: ${RED}● OFF${NC}"
-    fi
+    load_config
+    local ar=${AUTO_RESTART_ENABLED:-false}
+    [ "$ar" = "true" ] && echo -e "  ${WHITE}Auto-Restart: ${GREEN}● ON${NC} (${AUTO_RESTART_CHECK:-20}s)" || echo -e "  ${WHITE}Auto-Restart: ${RED}● OFF${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo ""
 }
@@ -59,11 +64,11 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}3${CYAN}]${NC}   Stop Service"
     echo -e "  ${CYAN}[${WHITE}4${CYAN}]${NC}   Restart Service"
     echo -e "  ${CYAN}[${WHITE}5${CYAN}]${NC}   View Live Logs"
-    echo -e "  ${CYAN}[${WHITE}6${CYAN}]${NC}   Switch History"
+    echo -e "  ${CYAN}[${WHITE}6${CYAN}]${NC}   Switch & Restart History"
     echo -e "  ${CYAN}[${WHITE}7${CYAN}]${NC}   Edit Config (manual)"
     echo -e "  ${CYAN}[${WHITE}8${CYAN}]${NC}   Test Connection"
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Config"
-    echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Server"
+    echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Servers"
     echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Remove DNS Server"
     echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Auto-Restart Settings"
     echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Update Script"
@@ -72,6 +77,50 @@ show_menu() {
     echo ""
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo -ne "  ${WHITE}Select: ${CYAN}"
+}
+
+# ═══ Save config without losing other settings ═══
+save_config() {
+    local bin="${BINARY:-/root/dnstt-client-linux-amd64}"
+    local key="${PUBKEY_FILE:-/root/pub.key}"
+    local listen="${LOCAL_LISTEN:-127.0.0.1:1080}"
+    local proto="${PROTOCOL:-udp}"
+    local hci="${HEALTH_CHECK_INTERVAL:-30}"
+    local mf="${MAX_FAILURES:-3}"
+    local afw="${ALL_FAILED_WAIT:-30}"
+    local are="${AUTO_RESTART_ENABLED:-true}"
+    local arc="${AUTO_RESTART_CHECK:-20}"
+    local arm="${AUTO_RESTART_MAX_TRIES:-3}"
+    local ste="${SOCKS_TEST_ENABLED:-false}"
+    local stu="${SOCKS_TEST_URL:-http://www.google.com}"
+    local stt="${SOCKS_TEST_TIMEOUT:-15}"
+
+    cat > "$CONFIG_FILE" << EOF
+# DNSTT-DNS-Changer Configuration
+# Updated: $(date)
+
+DNS_SERVERS=(
+$(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
+)
+
+DOMAINS=(
+$(for d in "${DOMAINS[@]}"; do echo "    \"$d\""; done)
+)
+
+BINARY="$bin"
+PUBKEY_FILE="$key"
+LOCAL_LISTEN="$listen"
+PROTOCOL="$proto"
+HEALTH_CHECK_INTERVAL=$hci
+MAX_FAILURES=$mf
+ALL_FAILED_WAIT=$afw
+AUTO_RESTART_ENABLED=$are
+AUTO_RESTART_CHECK=$arc
+AUTO_RESTART_MAX_TRIES=$arm
+SOCKS_TEST_ENABLED=$ste
+SOCKS_TEST_URL="$stu"
+SOCKS_TEST_TIMEOUT=$stt
+EOF
 }
 
 opt_status() {
@@ -89,12 +138,12 @@ opt_status() {
         [ "$pid" != "0" ] && echo -e "  ${WHITE}PID:${NC}      $pid"
         local up=$(ps -o etime= -p "$pid" 2>/dev/null | xargs)
         [ -n "$up" ] && echo -e "  ${WHITE}Uptime:${NC}   $up"
-        source "$CONFIG_FILE" 2>/dev/null
+        load_config
         local port="${LOCAL_LISTEN##*:}"
         echo -e "  ${WHITE}SOCKS5:${NC}   127.0.0.1:$port"
         ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "  ${WHITE}Port:${NC}     ${GREEN}● listening${NC}" || echo -e "  ${WHITE}Port:${NC}     ${RED}● not listening${NC}"
-        local sw=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "SWITCH")
-        local rs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "RESTART")
+        local sw=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "SWITCH" 2>/dev/null)
+        local rs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "RESTART" 2>/dev/null)
         echo -e "  ${WHITE}Switches:${NC} $sw"
         echo -e "  ${WHITE}Restarts:${NC} $rs"
     else
@@ -113,6 +162,7 @@ opt_start() {
         [ ! -f "/root/pub.key" ] && echo -e "    ${RED}✗ /root/pub.key${NC}"
         echo ""; read -p "  Press Enter..."; return
     fi
+    chmod +x /root/dnstt-client-linux-amd64
     echo -e "  ${YELLOW}Starting...${NC}"
     systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
     [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Started${NC}" || echo -e "  ${RED}✗ Failed${NC}"
@@ -122,9 +172,7 @@ opt_start() {
 opt_stop() {
     show_banner; echo -e "  ${YELLOW}Stopping...${NC}"
     systemctl stop "$SERVICE_NAME" 2>/dev/null
-    # Kill any remaining
-    pkill -9 -f "dnstt-client" 2>/dev/null
-    sleep 1
+    pkill -9 -f "dnstt-client" 2>/dev/null; sleep 1
     echo -e "  ${GREEN}✓ Stopped${NC}"
     echo ""; read -p "  Press Enter..."
 }
@@ -132,8 +180,7 @@ opt_stop() {
 opt_restart() {
     show_banner; echo -e "  ${YELLOW}Restarting...${NC}"
     systemctl stop "$SERVICE_NAME" 2>/dev/null
-    pkill -9 -f "dnstt-client" 2>/dev/null
-    sleep 2
+    pkill -9 -f "dnstt-client" 2>/dev/null; sleep 2
     systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
     [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Restarted${NC}" || echo -e "  ${RED}✗ Failed${NC}"
     echo ""; read -p "  Press Enter..."
@@ -165,9 +212,7 @@ opt_switches() {
             else echo -e "  ${CYAN}🔄 $l${NC}"; fi
         done
         echo ""
-        local sc=$(echo "$logs" | grep -c "SWITCH")
-        local rc=$(echo "$logs" | grep -c "RESTART")
-        echo -e "  ${WHITE}Switches: ${CYAN}$sc${NC} | ${WHITE}Restarts: ${CYAN}$rc${NC}"
+        echo -e "  ${WHITE}Switches: ${CYAN}$(echo "$logs" | grep -c SWITCH)${NC} | ${WHITE}Restarts: ${CYAN}$(echo "$logs" | grep -c RESTART)${NC}"
     fi
     echo ""; read -p "  Press Enter..."
 }
@@ -188,7 +233,7 @@ opt_test() {
     [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ dnstt-client${NC}" || echo -e "    ${RED}✗ dnstt-client${NC}"
     [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ pub.key${NC}" || echo -e "    ${RED}✗ pub.key${NC}"
     echo ""
-    source "$CONFIG_FILE" 2>/dev/null
+    load_config
     echo -ne "  ${WHITE}[1/3] Service...${NC}         "
     [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓ Running${NC}" || { echo -e "${RED}✗ Stopped${NC}"; echo ""; read -p "  Press Enter..."; return; }
     local port="${LOCAL_LISTEN##*:}"
@@ -218,57 +263,87 @@ opt_showconf() {
     echo ""; read -p "  Press Enter..."
 }
 
-# ═══ ADD DNS SERVER ═══
+# ═══ ADD DNS - Multiple at once ═══
 opt_add_dns() {
     show_banner
-    echo -e "  ${WHITE}${BOLD}=== Add DNS Server ===${NC}"
+    echo -e "  ${WHITE}${BOLD}=== Add DNS Servers ===${NC}"
     echo ""
 
-    source "$CONFIG_FILE" 2>/dev/null
+    load_config
 
-    echo -e "  ${WHITE}Current servers:${NC}"
-    for i in "${!DNS_SERVERS[@]}"; do
-        echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
+    if [ ${#DNS_SERVERS[@]} -gt 0 ]; then
+        echo -e "  ${WHITE}Current servers:${NC}"
+        for i in "${!DNS_SERVERS[@]}"; do
+            echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
+        done
+        echo ""
+    fi
+
+    echo -e "  ${CYAN}Enter new servers. Press Enter with empty input when done:${NC}"
+    echo ""
+
+    local added=0
+    local num=$((${#DNS_SERVERS[@]} + 1))
+
+    while true; do
+        echo -ne "  ${WHITE}Server $num IP:Port (or Enter to finish): ${NC}"
+        read -r new_dns
+
+        # Empty = done
+        if [ -z "$new_dns" ]; then
+            if [ $added -eq 0 ]; then
+                echo -e "  ${YELLOW}No servers added.${NC}"
+            fi
+            break
+        fi
+
+        echo -ne "  ${WHITE}Domain for server $num: ${NC}"
+        read -r new_domain
+
+        if [ -z "$new_domain" ]; then
+            echo -e "  ${RED}Domain required! Skipping this server.${NC}"
+            echo ""
+            continue
+        fi
+
+        DNS_SERVERS+=("$new_dns")
+        DOMAINS+=("$new_domain")
+        added=$((added + 1))
+        num=$((num + 1))
+        echo -e "  ${GREEN}✓ Added: $new_dns -> $new_domain${NC}"
+        echo ""
     done
-    echo ""
 
-    echo -ne "  ${WHITE}New DNS server (ip:port): ${NC}"; read -r new_dns
-    [ -z "$new_dns" ] && { echo -e "  ${RED}Cancelled${NC}"; read -p "  Press Enter..."; return; }
+    if [ $added -gt 0 ]; then
+        save_config
+        echo ""
+        echo -e "  ${GREEN}✓ $added server(s) added!${NC}"
+        echo ""
+        echo -e "  ${WHITE}Updated server list:${NC}"
+        for i in "${!DNS_SERVERS[@]}"; do
+            echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
+        done
+        echo ""
+        echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"; read -r r
+        if [ "$r" = "y" ]; then
+            systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2
+            echo -e "  ${GREEN}✓ Restarted${NC}"
+        fi
+    fi
 
-    echo -ne "  ${WHITE}Domain for this server: ${NC}"; read -r new_domain
-    [ -z "$new_domain" ] && { echo -e "  ${RED}Cancelled${NC}"; read -p "  Press Enter..."; return; }
-
-    # Add to arrays
-    DNS_SERVERS+=("$new_dns")
-    DOMAINS+=("$new_domain")
-
-    # Rewrite config
-    rewrite_config
-
-    echo ""
-    echo -e "  ${GREEN}✓ Server added: $new_dns -> $new_domain${NC}"
-    echo ""
-    echo -e "  ${WHITE}Updated server list:${NC}"
-    for i in "${!DNS_SERVERS[@]}"; do
-        echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
-    done
-
-    echo ""
-    echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"; read -r r
-    [ "$r" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓ Restarted${NC}"; }
     read -p "  Press Enter..."
 }
 
-# ═══ REMOVE DNS SERVER ═══
+# ═══ REMOVE DNS - Select which to remove ═══
 opt_remove_dns() {
     show_banner
     echo -e "  ${WHITE}${BOLD}=== Remove DNS Server ===${NC}"
     echo ""
 
-    source "$CONFIG_FILE" 2>/dev/null
+    load_config
 
     if [ ${#DNS_SERVERS[@]} -le 1 ]; then
-        echo -e "  ${RED}Cannot remove! You need at least 1 server.${NC}"
+        echo -e "  ${RED}Cannot remove! Need at least 1 server.${NC}"
         echo ""; read -p "  Press Enter..."; return
     fi
 
@@ -277,14 +352,21 @@ opt_remove_dns() {
     for i in "${!DNS_SERVERS[@]}"; do
         echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
     done
-
     echo ""
-    echo -e "  ${GRAY}Enter number to remove, or 0 to cancel${NC}"
-    echo -ne "  ${WHITE}Remove server #: ${NC}"; read -r rem_num
+    echo -e "  ${GRAY}Enter number to remove (0 = cancel)${NC}"
+    echo -ne "  ${WHITE}Remove #: ${NC}"; read -r rem_num
 
-    [ -z "$rem_num" ] || [ "$rem_num" = "0" ] && { echo -e "  ${GREEN}Cancelled${NC}"; read -p "  Press Enter..."; return; }
+    if [ -z "$rem_num" ] || [ "$rem_num" = "0" ]; then
+        echo -e "  ${GREEN}Cancelled${NC}"
+        read -p "  Press Enter..."; return
+    fi
 
-    # Validate number
+    # Validate
+    if ! [[ "$rem_num" =~ ^[0-9]+$ ]]; then
+        echo -e "  ${RED}Invalid number!${NC}"
+        read -p "  Press Enter..."; return
+    fi
+
     local idx=$((rem_num - 1))
     if [ $idx -lt 0 ] || [ $idx -ge ${#DNS_SERVERS[@]} ]; then
         echo -e "  ${RED}Invalid number!${NC}"
@@ -300,67 +382,39 @@ opt_remove_dns() {
     echo -e "    ${WHITE}Domain:${NC} $rem_domain"
     echo ""
     echo -ne "  ${RED}Confirm? (y/n): ${NC}"; read -r confirm
-    [ "$confirm" != "y" ] && { echo -e "  ${GREEN}Cancelled${NC}"; read -p "  Press Enter..."; return; }
+    if [ "$confirm" != "y" ]; then
+        echo -e "  ${GREEN}Cancelled${NC}"
+        read -p "  Press Enter..."; return
+    fi
 
-    # Remove from arrays
-    local new_dns=()
-    local new_domains=()
+    # Build new arrays without the removed item
+    local temp_dns=()
+    local temp_domains=()
     for i in "${!DNS_SERVERS[@]}"; do
-        if [ $i -ne $idx ]; then
-            new_dns+=("${DNS_SERVERS[$i]}")
-            new_domains+=("${DOMAINS[$i]}")
+        if [ "$i" -ne "$idx" ]; then
+            temp_dns+=("${DNS_SERVERS[$i]}")
+            temp_domains+=("${DOMAINS[$i]}")
         fi
     done
-    DNS_SERVERS=("${new_dns[@]}")
-    DOMAINS=("${new_domains[@]}")
+    DNS_SERVERS=("${temp_dns[@]}")
+    DOMAINS=("${temp_domains[@]}")
 
-    # Rewrite config
-    rewrite_config
+    save_config
 
     echo ""
-    echo -e "  ${GREEN}✓ Server removed: $rem_dns${NC}"
+    echo -e "  ${GREEN}✓ Removed: $rem_dns${NC}"
     echo ""
     echo -e "  ${WHITE}Remaining servers:${NC}"
     for i in "${!DNS_SERVERS[@]}"; do
         echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"
     done
-
     echo ""
     echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"; read -r r
-    [ "$r" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓ Restarted${NC}"; }
+    if [ "$r" = "y" ]; then
+        systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2
+        echo -e "  ${GREEN}✓ Restarted${NC}"
+    fi
     read -p "  Press Enter..."
-}
-
-# ═══ REWRITE CONFIG FILE ═══
-rewrite_config() {
-    source "$CONFIG_FILE" 2>/dev/null
-
-    cat > "$CONFIG_FILE" << CONFEOF
-# DNSTT-DNS-Changer Configuration
-# Updated: $(date)
-
-DNS_SERVERS=(
-$(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
-)
-
-DOMAINS=(
-$(for d in "${DOMAINS[@]}"; do echo "    \"$d\""; done)
-)
-
-BINARY="${BINARY:-/root/dnstt-client-linux-amd64}"
-PUBKEY_FILE="${PUBKEY_FILE:-/root/pub.key}"
-LOCAL_LISTEN="${LOCAL_LISTEN:-127.0.0.1:1080}"
-PROTOCOL="${PROTOCOL:-udp}"
-HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30}
-MAX_FAILURES=${MAX_FAILURES:-3}
-ALL_FAILED_WAIT=${ALL_FAILED_WAIT:-30}
-AUTO_RESTART_ENABLED=${AUTO_RESTART_ENABLED:-true}
-AUTO_RESTART_CHECK=${AUTO_RESTART_CHECK:-20}
-AUTO_RESTART_MAX_TRIES=${AUTO_RESTART_MAX_TRIES:-3}
-SOCKS_TEST_ENABLED=${SOCKS_TEST_ENABLED:-false}
-SOCKS_TEST_URL="${SOCKS_TEST_URL:-http://www.google.com}"
-SOCKS_TEST_TIMEOUT=${SOCKS_TEST_TIMEOUT:-15}
-CONFEOF
 }
 
 # ═══ AUTO-RESTART SETTINGS ═══
@@ -369,18 +423,17 @@ opt_autorestart() {
     echo -e "  ${WHITE}${BOLD}=== Auto-Restart Settings ===${NC}"
     echo ""
 
-    source "$CONFIG_FILE" 2>/dev/null
+    load_config
     local ar=${AUTO_RESTART_ENABLED:-false}
     local ac=${AUTO_RESTART_CHECK:-20}
     local am=${AUTO_RESTART_MAX_TRIES:-3}
 
-    echo -e "  ${WHITE}Current settings:${NC}"
+    echo -e "  ${WHITE}Current:${NC}"
     [ "$ar" = "true" ] && echo -e "    ${GREEN}● Enabled${NC}" || echo -e "    ${RED}● Disabled${NC}"
-    echo -e "    ${WHITE}Check interval:${NC} ${CYAN}${ac}s${NC}"
-    echo -e "    ${WHITE}Max tries:${NC}      ${CYAN}${am}${NC}"
+    echo -e "    ${WHITE}Check every:${NC}  ${CYAN}${ac}s${NC}"
+    echo -e "    ${WHITE}Max tries:${NC}    ${CYAN}${am}${NC}"
     echo ""
 
-    echo -e "  ${WHITE}Options:${NC}"
     echo -e "    ${CYAN}[1]${NC} Toggle ON/OFF"
     echo -e "    ${CYAN}[2]${NC} Change check interval"
     echo -e "    ${CYAN}[3]${NC} Change max tries"
@@ -397,29 +450,29 @@ opt_autorestart() {
                 AUTO_RESTART_ENABLED=true
                 echo -e "  ${GREEN}Auto-restart ENABLED${NC}"
             fi
-            rewrite_config
+            save_config
             ;;
         2)
-            echo -ne "  ${WHITE}Check interval in seconds [${ac}]: ${NC}"; read -r new_interval
-            [ -n "$new_interval" ] && {
-                AUTO_RESTART_CHECK=$new_interval
-                rewrite_config
-                echo -e "  ${GREEN}✓ Set to ${new_interval}s${NC}"
-            }
+            echo -ne "  ${WHITE}Seconds [${ac}]: ${NC}"; read -r ni
+            if [ -n "$ni" ]; then
+                AUTO_RESTART_CHECK=$ni
+                save_config
+                echo -e "  ${GREEN}✓ Set to ${ni}s${NC}"
+            fi
             ;;
         3)
-            echo -ne "  ${WHITE}Max restart tries [${am}]: ${NC}"; read -r new_max
-            [ -n "$new_max" ] && {
-                AUTO_RESTART_MAX_TRIES=$new_max
-                rewrite_config
-                echo -e "  ${GREEN}✓ Set to ${new_max}${NC}"
-            }
+            echo -ne "  ${WHITE}Max tries [${am}]: ${NC}"; read -r nm
+            if [ -n "$nm" ]; then
+                AUTO_RESTART_MAX_TRIES=$nm
+                save_config
+                echo -e "  ${GREEN}✓ Set to ${nm}${NC}"
+            fi
             ;;
         0) return ;;
     esac
 
     echo ""
-    echo -ne "  ${YELLOW}Restart service to apply? (y/n): ${NC}"; read -r r
+    echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"; read -r r
     [ "$r" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓ Restarted${NC}"; }
     read -p "  Press Enter..."
 }
@@ -427,26 +480,26 @@ opt_autorestart() {
 # ═══ UPDATE ═══
 opt_update() {
     show_banner
-    echo -e "  ${WHITE}${BOLD}=== Update Script ===${NC}"
+    echo -e "  ${WHITE}${BOLD}=== Update ===${NC}"
     echo ""
     echo -e "  ${WHITE}Current: ${CYAN}$VERSION${NC}"
-    echo -e "  ${GREEN}Config will NOT be changed${NC}"
+    echo -e "  ${GREEN}Config will NOT change${NC}"
     echo ""
     echo -ne "  ${WHITE}Update? (y/n): ${NC}"; read -r u
     [ "$u" != "y" ] && { read -p "  Press Enter..."; return; }
-    echo ""
 
+    echo ""
     echo -ne "  ${WHITE}[1/4] Stopping...${NC}        "
     systemctl stop "$SERVICE_NAME" 2>/dev/null; pkill -9 -f "dnstt-client" 2>/dev/null
     echo -e "${GREEN}✓${NC}"
 
-    echo -ne "  ${WHITE}[2/4] Failover engine...${NC} "
+    echo -ne "  ${WHITE}[2/4] Failover...${NC}        "
     curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover 2>/dev/null && chmod +x /usr/local/bin/dnstt-failover && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
 
-    echo -ne "  ${WHITE}[3/4] CLI tool...${NC}         "
+    echo -ne "  ${WHITE}[3/4] CLI...${NC}             "
     curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt 2>/dev/null && chmod +x /usr/local/bin/winnet-dnstt && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
 
-    echo -ne "  ${WHITE}[4/4] Service...${NC}          "
+    echo -ne "  ${WHITE}[4/4] Service...${NC}         "
     cat > /etc/systemd/system/${SERVICE_NAME}.service << 'SVCEOF'
 [Unit]
 Description=DNSTT-DNS-Changer Tunnel Service
@@ -469,11 +522,10 @@ SVCEOF
     systemctl daemon-reload
     echo -e "${GREEN}✓${NC}"
 
-    echo ""
     systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
-    systemctl is-active --quiet "$SERVICE_NAME" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ Check logs${NC}"
     echo ""
-    echo -e "  ${GREEN}✓ Updated! Run ${WHITE}winnet-dnstt${GREEN} again${NC}"
+    systemctl is-active --quiet "$SERVICE_NAME" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ Check logs${NC}"
+    echo -e "  ${YELLOW}Run ${WHITE}winnet-dnstt${YELLOW} again${NC}"
     echo ""; read -p "  Press Enter..."
     exit 0
 }
@@ -494,7 +546,6 @@ opt_uninstall() {
     [ "$rc" = "y" ] && rm -rf /etc/dnstt-DNS-changer
     systemctl daemon-reload 2>/dev/null
     echo -e "  ${GREEN}✓ Uninstalled${NC}"
-    echo -e "  ${GRAY}/root/ files were NOT removed${NC}"
     exit 0
 }
 
