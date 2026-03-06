@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Installer / Updater v1.8.0
+# DNSTT-DNS-Changer Installer / Updater v1.9.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.8.0"
+VERSION="1.9.0"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
@@ -136,7 +136,7 @@ if [ ${#DNS_L[@]} -gt 0 ]; then
     source "$INSTALL_DIR/config.conf" 2>/dev/null
 
     cat > "$INSTALL_DIR/config.conf" << CONFEOF
-# DNSTT-DNS-Changer Configuration v1.8.0
+# DNSTT-DNS-Changer Configuration v1.9.0
 # Generated: $(date)
 
 DNS_SERVERS=(
