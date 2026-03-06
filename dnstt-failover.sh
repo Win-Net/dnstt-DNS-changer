@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Failover Engine v1.3.0
+# DNSTT-DNS-Changer Failover Engine v1.4.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 if [ ! -f "$CONFIG_FILE" ]; then echo "[FATAL] Config not found: $CONFIG_FILE"; exit 1; fi
 source "$CONFIG_FILE"
@@ -14,6 +14,7 @@ if [ ${#DNS_SERVERS[@]} -eq 0 ]; then echo "[FATAL] No DNS servers!"; exit 1; fi
 if [ ${#DOMAINS[@]} -eq 0 ]; then echo "[FATAL] No domains!"; exit 1; fi
 if [ ${#DNS_SERVERS[@]} -ne ${#DOMAINS[@]} ]; then echo "[FATAL] Server/domain count mismatch!"; exit 1; fi
 if [ ! -f "$BINARY" ]; then echo "[FATAL] Binary not found: $BINARY"; exit 1; fi
+if [ ! -x "$BINARY" ]; then chmod +x "$BINARY"; fi
 if [ ! -f "$PUBKEY_FILE" ]; then echo "[FATAL] Key not found: $PUBKEY_FILE"; exit 1; fi
 
 CURRENT_INDEX=0
@@ -24,16 +25,11 @@ TOTAL_SWITCHES=0
 TOTAL_RESTARTS=0
 LOG_TAG="dnstt-DNS-changer"
 
-# Auto-restart settings
-AUTO_RESTART=${AUTO_RESTART_ENABLED:-true}
-AUTO_RESTART_INTERVAL=${AUTO_RESTART_CHECK:-20}
-AUTO_RESTART_MAX=${AUTO_RESTART_MAX_TRIES:-5}
-
-log_info()    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO]    $1"; logger -t "$LOG_TAG" "INFO: $1"; }
-log_warn()    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] $1"; logger -t "$LOG_TAG" "WARNING: $1"; }
-log_error()   { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR]   $1"; logger -t "$LOG_TAG" "ERROR: $1"; }
-log_switch()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SWITCH]  $1"; logger -t "$LOG_TAG" "SWITCH: $1"; }
-log_restart() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [RESTART] $1"; logger -t "$LOG_TAG" "RESTART: $1"; }
+log_info()    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO]    $1"; logger -t "$LOG_TAG" "INFO: $1" 2>/dev/null; }
+log_warn()    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] $1"; logger -t "$LOG_TAG" "WARNING: $1" 2>/dev/null; }
+log_error()   { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR]   $1"; logger -t "$LOG_TAG" "ERROR: $1" 2>/dev/null; }
+log_switch()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SWITCH]  $1"; logger -t "$LOG_TAG" "SWITCH: $1" 2>/dev/null; }
+log_restart() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [RESTART] $1"; logger -t "$LOG_TAG" "RESTART: $1" 2>/dev/null; }
 
 cleanup() {
     RUNNING=false
@@ -44,74 +40,94 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT SIGHUP
 
-# ═══ Kill ALL dnstt processes completely ═══
-kill_all_dnstt() {
-    local port="${LOCAL_LISTEN##*:}"
+get_port() {
+    echo "${LOCAL_LISTEN##*:}"
+}
 
-    # Kill child if we know it
+kill_all_dnstt() {
+    local port=$(get_port)
+
+    # Kill our child
     if [ $CHILD_PID -ne 0 ] && kill -0 $CHILD_PID 2>/dev/null; then
         kill -TERM $CHILD_PID 2>/dev/null
-        local w=0
-        while kill -0 $CHILD_PID 2>/dev/null && [ $w -lt 3 ]; do sleep 1; w=$((w+1)); done
+        sleep 2
         kill -0 $CHILD_PID 2>/dev/null && kill -9 $CHILD_PID 2>/dev/null
         wait $CHILD_PID 2>/dev/null
     fi
     CHILD_PID=0
 
-    # Kill ALL dnstt-client processes
+    # Kill ALL dnstt-client
     pkill -9 -f "dnstt-client" 2>/dev/null
     sleep 1
 
-    # Double check - kill anything on our port
-    local pids=$(ss -tlnp 2>/dev/null | grep ":${port}" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)
+    # Kill anything on our port
+    if command -v fuser &>/dev/null; then
+        fuser -k ${port}/tcp 2>/dev/null
+        sleep 1
+    fi
+
+    local pids=$(ss -tlnp 2>/dev/null | grep ":${port}" | grep -oP 'pid=\K[0-9]+' | sort -u)
     if [ -n "$pids" ]; then
-        echo "$pids" | while read p; do
-            [ -n "$p" ] && kill -9 "$p" 2>/dev/null
-        done
+        for p in $pids; do kill -9 "$p" 2>/dev/null; done
         sleep 1
     fi
 
-    # Triple check with lsof
     if command -v lsof &>/dev/null; then
-        lsof -ti :${port} 2>/dev/null | while read p; do
-            kill -9 "$p" 2>/dev/null
-        done
+        lsof -ti :${port} 2>/dev/null | xargs -r kill -9 2>/dev/null
         sleep 1
     fi
 
-    # Final check
-    if ss -tlnp 2>/dev/null | grep -q ":${port}"; then
-        log_warn "Port $port still busy, waiting 5s for OS to release..."
-        sleep 5
-    fi
+    # Wait for port
+    local w=0
+    while ss -tlnp 2>/dev/null | grep -q ":${port}" && [ $w -lt 10 ]; do
+        sleep 1
+        w=$((w+1))
+    done
 }
 
-# ═══ Start DNSTT ═══
+wait_port_free() {
+    local port=$(get_port)
+    local w=0
+    while ss -tlnp 2>/dev/null | grep -q ":${port}" && [ $w -lt 15 ]; do
+        sleep 1
+        w=$((w+1))
+    done
+    if ss -tlnp 2>/dev/null | grep -q ":${port}"; then
+        return 1
+    fi
+    return 0
+}
+
+wait_port_open() {
+    local port=$(get_port)
+    local w=0
+    while ! ss -tlnp 2>/dev/null | grep -q ":${port}" && [ $w -lt 15 ]; do
+        sleep 1
+        w=$((w+1))
+    done
+    if ss -tlnp 2>/dev/null | grep -q ":${port}"; then
+        return 0
+    fi
+    return 1
+}
+
 start_dnstt() {
     local dns="${DNS_SERVERS[$CURRENT_INDEX]}"
     local domain="${DOMAINS[$CURRENT_INDEX]}"
     log_info "========================================"
     log_info "Connecting [$((CURRENT_INDEX+1))/${#DNS_SERVERS[@]}]"
-    log_info "DNS: $dns | Domain: $domain"
+    log_info "DNS: $dns | Domain: $domain | Protocol: $PROTOCOL"
     log_info "========================================"
 
-    # Clean kill everything first
     kill_all_dnstt
 
-    # Wait for port to be free
-    local port="${LOCAL_LISTEN##*:}"
-    local wait=0
-    while ss -tlnp 2>/dev/null | grep -q ":${port}" && [ $wait -lt 10 ]; do
-        sleep 1
-        wait=$((wait+1))
-    done
-
-    if ss -tlnp 2>/dev/null | grep -q ":${port}"; then
-        log_error "Port $port cannot be freed!"
+    if ! wait_port_free; then
+        log_error "Port $(get_port) cannot be freed!"
         return 1
     fi
 
-    # Start process
+    sleep 1
+
     if [ "$PROTOCOL" = "dot" ]; then
         $BINARY -dot "$dns" -pubkey-file "$PUBKEY_FILE" "$domain" "$LOCAL_LISTEN" &
     else
@@ -120,8 +136,7 @@ start_dnstt() {
     CHILD_PID=$!
     FAILURE_COUNT=0
 
-    # Wait for startup
-    sleep 5
+    sleep 3
 
     if ! kill -0 $CHILD_PID 2>/dev/null; then
         log_error "Process died immediately!"
@@ -129,49 +144,36 @@ start_dnstt() {
         return 1
     fi
 
-    # Wait for port to open
-    local pc=0
-    while [ $pc -lt 10 ]; do
-        if ss -tlnp 2>/dev/null | grep -q ":${port}"; then
-            log_info "Started OK (PID: $CHILD_PID, Port: $port)"
-            return 0
-        fi
-        sleep 1
-        pc=$((pc+1))
-    done
+    if wait_port_open; then
+        log_info "Started OK (PID: $CHILD_PID, Port: $(get_port))"
+        return 0
+    fi
 
-    log_warn "Process running but port slow to open"
-    return 0
+    if kill -0 $CHILD_PID 2>/dev/null; then
+        log_warn "Process alive but port slow, continuing..."
+        return 0
+    fi
+
+    log_error "Process died during startup"
+    CHILD_PID=0
+    return 1
 }
 
-# ═══ Full restart of current server ═══
-full_restart() {
-    TOTAL_RESTARTS=$((TOTAL_RESTARTS + 1))
-    log_restart "Full restart #$TOTAL_RESTARTS on ${DNS_SERVERS[$CURRENT_INDEX]}"
-    kill_all_dnstt
-    sleep 3
-    start_dnstt
-}
-
-# ═══ Health Check ═══
-health_check() {
-    # Check 1: Process alive?
+is_connection_alive() {
+    # Check 1: Process
     if [ $CHILD_PID -eq 0 ] || ! kill -0 $CHILD_PID 2>/dev/null; then
-        log_warn "Process not running"
         return 1
     fi
 
-    # Check 2: Port listening?
-    local port="${LOCAL_LISTEN##*:}"
+    # Check 2: Port
+    local port=$(get_port)
     if ! ss -tlnp 2>/dev/null | grep -q ":${port}"; then
-        log_warn "Port $port not listening"
         return 1
     fi
 
-    # Check 3: SOCKS test
-    if [ "$SOCKS_TEST_ENABLED" = "true" ] && command -v curl &>/dev/null; then
-        if ! timeout "$SOCKS_TEST_TIMEOUT" curl -s --socks5 "$LOCAL_LISTEN" "$SOCKS_TEST_URL" > /dev/null 2>&1; then
-            log_warn "SOCKS test failed"
+    # Check 3: SOCKS (optional)
+    if [ "${SOCKS_TEST_ENABLED}" = "true" ] && command -v curl &>/dev/null; then
+        if ! timeout "${SOCKS_TEST_TIMEOUT:-15}" curl -s --socks5 "$LOCAL_LISTEN" "${SOCKS_TEST_URL:-http://www.google.com}" > /dev/null 2>&1; then
             return 1
         fi
     fi
@@ -179,23 +181,27 @@ health_check() {
     return 0
 }
 
-# ═══ Switch to next ═══
+full_restart() {
+    TOTAL_RESTARTS=$((TOTAL_RESTARTS + 1))
+    log_restart "Full restart #$TOTAL_RESTARTS on ${DNS_SERVERS[$CURRENT_INDEX]}"
+    start_dnstt
+}
+
 switch_to_next() {
     local old="${DNS_SERVERS[$CURRENT_INDEX]}"
     kill_all_dnstt
     CURRENT_INDEX=$(( (CURRENT_INDEX + 1) % ${#DNS_SERVERS[@]} ))
     TOTAL_SWITCHES=$((TOTAL_SWITCHES + 1))
     log_switch "Changed: $old -> ${DNS_SERVERS[$CURRENT_INDEX]} (Switch #$TOTAL_SWITCHES)"
-    sleep 3
+    sleep 2
 }
 
 # ═══════════════════════════════════════════════════════════
-# MAIN
+# MAIN LOOP
 # ═══════════════════════════════════════════════════════════
 
 log_info "DNSTT-DNS-Changer v$VERSION started"
-log_info "Servers: ${#DNS_SERVERS[@]} | Check: ${AUTO_RESTART_INTERVAL}s | Max fail: $MAX_FAILURES"
-log_info "Auto-restart: $AUTO_RESTART"
+log_info "Servers: ${#DNS_SERVERS[@]} | Auto-restart: ${AUTO_RESTART_ENABLED:-true}"
 
 # Initial start
 if ! start_dnstt; then
@@ -205,46 +211,49 @@ if ! start_dnstt; then
 fi
 
 RESTART_TRIES=0
+CHECK_INTERVAL=${AUTO_RESTART_CHECK:-20}
 
 while $RUNNING; do
-    sleep "$AUTO_RESTART_INTERVAL"
+    sleep "$CHECK_INTERVAL"
     $RUNNING || break
 
-    # Reload config for auto-restart settings (so user can change without restart)
+    # Reload config live
     source "$CONFIG_FILE" 2>/dev/null
-    AUTO_RESTART=${AUTO_RESTART_ENABLED:-true}
-    AUTO_RESTART_INTERVAL=${AUTO_RESTART_CHECK:-20}
+    CHECK_INTERVAL=${AUTO_RESTART_CHECK:-20}
+    local max_fail=${MAX_FAILURES:-3}
+    local auto_on=${AUTO_RESTART_ENABLED:-true}
+    local auto_max=${AUTO_RESTART_MAX_TRIES:-3}
 
-    if health_check; then
-        # All good
+    if is_connection_alive; then
         if [ $FAILURE_COUNT -gt 0 ]; then
-            log_info "Connection recovered after $FAILURE_COUNT failures"
+            log_info "Recovered after $FAILURE_COUNT failures"
         fi
         FAILURE_COUNT=0
         RESTART_TRIES=0
     else
         FAILURE_COUNT=$((FAILURE_COUNT + 1))
-        log_warn "Failure $FAILURE_COUNT/$MAX_FAILURES on ${DNS_SERVERS[$CURRENT_INDEX]}"
+        log_warn "DEAD! Failure $FAILURE_COUNT/$max_fail on ${DNS_SERVERS[$CURRENT_INDEX]}"
 
-        # Auto-restart: try restarting same server first
-        if [ "$AUTO_RESTART" = "true" ] && [ $FAILURE_COUNT -lt $MAX_FAILURES ]; then
+        # AUTO RESTART: try same server first
+        if [ "$auto_on" = "true" ]; then
             RESTART_TRIES=$((RESTART_TRIES + 1))
-            if [ $RESTART_TRIES -le $AUTO_RESTART_MAX ]; then
-                log_restart "Auto-restart attempt $RESTART_TRIES (same server)"
-                full_restart
-                sleep 5
-                if health_check; then
-                    log_info "Auto-restart successful!"
-                    FAILURE_COUNT=0
-                    RESTART_TRIES=0
-                    continue
-                fi
+            log_restart "Auto-restart try $RESTART_TRIES/$auto_max"
+            full_restart
+            sleep 8
+            if is_connection_alive; then
+                log_info "Auto-restart SUCCESS!"
+                FAILURE_COUNT=0
+                RESTART_TRIES=0
+                continue
+            else
+                log_warn "Auto-restart failed"
             fi
         fi
 
-        # Max failures reached, switch server
-        if [ $FAILURE_COUNT -ge $MAX_FAILURES ]; then
-            log_error "Server ${DNS_SERVERS[$CURRENT_INDEX]} down!"
+        # Enough failures, switch server
+        if [ $FAILURE_COUNT -ge $max_fail ] || [ $RESTART_TRIES -ge $auto_max ]; then
+            log_error "Server ${DNS_SERVERS[$CURRENT_INDEX]} DEAD! Switching..."
+            FAILURE_COUNT=0
             RESTART_TRIES=0
             FULL_ROUND=0
             ATTEMPTS=0
@@ -252,27 +261,24 @@ while $RUNNING; do
             while $RUNNING; do
                 switch_to_next
                 if start_dnstt; then
-                    sleep 5
-                    if health_check; then
+                    sleep 8
+                    if is_connection_alive; then
                         log_info "Connected to ${DNS_SERVERS[$CURRENT_INDEX]}"
-                        FAILURE_COUNT=0
                         break
                     elif kill -0 $CHILD_PID 2>/dev/null; then
-                        log_info "Process running on ${DNS_SERVERS[$CURRENT_INDEX]}, continuing..."
-                        FAILURE_COUNT=0
+                        log_info "Process running, giving it a chance..."
                         break
                     fi
                 fi
                 ATTEMPTS=$((ATTEMPTS + 1))
                 if [ $ATTEMPTS -ge ${#DNS_SERVERS[@]} ]; then
                     FULL_ROUND=$((FULL_ROUND + 1))
-                    log_error "All servers failed! Round $FULL_ROUND"
                     if [ $FULL_ROUND -ge 3 ]; then
-                        log_error "Waiting 60s..."
+                        log_error "All down! Waiting 60s..."
                         sleep 60
                     else
-                        log_error "Waiting ${ALL_FAILED_WAIT}s..."
-                        sleep "$ALL_FAILED_WAIT"
+                        log_error "All down! Waiting ${ALL_FAILED_WAIT:-30}s..."
+                        sleep "${ALL_FAILED_WAIT:-30}"
                     fi
                     ATTEMPTS=0
                 fi
