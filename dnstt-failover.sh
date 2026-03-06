@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v1.7.0 - Real Connection Check
+# DNSTT-DNS-Changer v1.7.1 - Real Connection Check
 # https://github.com/Win-Net/dnstt-DNS-changer
 #
 # Logic:
@@ -115,7 +115,7 @@ next_dns() {
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # ═══ MAIN ═══
-log "INFO" "v1.7.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+log "INFO" "v1.7.1 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 # Make sure curl is installed
 if ! command -v curl &>/dev/null; then
