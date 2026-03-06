@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt)
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.1.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 
@@ -38,6 +38,15 @@ get_status() { systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && echo "
 show_status_bar() {
     local s=$(get_status)
     [ "$s" = "active" ] && echo -e "  ${WHITE}Service: ${GREEN}● RUNNING${NC}" || echo -e "  ${WHITE}Service: ${RED}● STOPPED${NC}"
+    
+    # Check required files
+    if [ ! -f "/root/dnstt-client-linux-amd64" ]; then
+        echo -e "  ${RED}⚠ Missing: /root/dnstt-client-linux-amd64${NC}"
+    fi
+    if [ ! -f "/root/pub.key" ]; then
+        echo -e "  ${RED}⚠ Missing: /root/pub.key${NC}"
+    fi
+    
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo ""
 }
@@ -65,6 +74,13 @@ opt_status() {
     show_banner
     echo -e "  ${WHITE}${BOLD}=== Service Status ===${NC}"
     echo ""
+
+    # File checks
+    echo -e "  ${WHITE}Required Files:${NC}"
+    [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ /root/dnstt-client-linux-amd64${NC}" || echo -e "    ${RED}✗ /root/dnstt-client-linux-amd64 MISSING${NC}"
+    [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ /root/pub.key${NC}" || echo -e "    ${RED}✗ /root/pub.key MISSING${NC}"
+    echo ""
+
     local s=$(get_status)
     if [ "$s" = "active" ]; then
         echo -e "  ${GREEN}● RUNNING${NC}"
@@ -74,6 +90,7 @@ opt_status() {
         [ -n "$up" ] && echo -e "  ${WHITE}Uptime:${NC}   $up"
         source "$CONFIG_FILE" 2>/dev/null
         local port="${LOCAL_LISTEN##*:}"
+        echo -e "  ${WHITE}SOCKS5:${NC}   127.0.0.1:$port"
         ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "  ${WHITE}Port:${NC}     ${GREEN}● $port listening${NC}" || echo -e "  ${WHITE}Port:${NC}     ${RED}● $port not listening${NC}"
         local sw=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "SWITCH")
         echo -e "  ${WHITE}Switches:${NC} $sw"
@@ -86,9 +103,18 @@ opt_status() {
 }
 
 opt_start() {
-    show_banner; echo -e "  ${YELLOW}Starting...${NC}"
-    systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 2
-    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Started${NC}" || echo -e "  ${RED}✗ Failed${NC}"
+    show_banner
+    if [ ! -f "/root/dnstt-client-linux-amd64" ] || [ ! -f "/root/pub.key" ]; then
+        echo -e "  ${RED}Cannot start! Missing files:${NC}"
+        [ ! -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${RED}✗ /root/dnstt-client-linux-amd64${NC}"
+        [ ! -f "/root/pub.key" ] && echo -e "    ${RED}✗ /root/pub.key${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Upload these files to /root/ first${NC}"
+        echo ""; read -p "  Press Enter..."; return
+    fi
+    echo -e "  ${YELLOW}Starting...${NC}"
+    systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
+    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Started${NC}" || echo -e "  ${RED}✗ Failed. Check logs (option 5)${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
@@ -136,7 +162,7 @@ opt_edit() {
     local ed="nano"; command -v nano &>/dev/null || ed="vi"
     $ed "$CONFIG_FILE"
     echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"; read -r a
-    [ "$a" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; echo -e "  ${GREEN}✓ Restarted${NC}"; }
+    [ "$a" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓ Restarted${NC}"; }
     read -p "  Press Enter..."
 }
 
@@ -144,12 +170,22 @@ opt_test() {
     show_banner
     echo -e "  ${WHITE}${BOLD}=== Connection Test ===${NC}"
     echo ""
+
+    # File check
+    echo -e "  ${WHITE}Files:${NC}"
+    [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ dnstt-client binary${NC}" || echo -e "    ${RED}✗ dnstt-client binary MISSING${NC}"
+    [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ pub.key${NC}" || echo -e "    ${RED}✗ pub.key MISSING${NC}"
+    echo ""
+
     source "$CONFIG_FILE" 2>/dev/null
+
     echo -ne "  ${WHITE}[1/3] Service...${NC}         "
     [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓ Running${NC}" || { echo -e "${RED}✗ Stopped${NC}"; echo ""; read -p "  Press Enter..."; return; }
+
     local port="${LOCAL_LISTEN##*:}"
     echo -ne "  ${WHITE}[2/3] Port $port...${NC}      "
     ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓ Listening${NC}" || echo -e "${RED}✗ Not listening${NC}"
+
     echo -ne "  ${WHITE}[3/3] SOCKS proxy...${NC}     "
     if command -v curl &>/dev/null; then
         if timeout 15 curl -s --socks5 "$LOCAL_LISTEN" "http://httpbin.org/ip" > /tmp/dt_test 2>/dev/null; then
@@ -158,9 +194,12 @@ opt_test() {
         else echo -e "${RED}✗ Failed${NC}"; fi
         rm -f /tmp/dt_test
     else echo -e "${YELLOW}⚠ curl not found${NC}"; fi
+
     echo ""
-    echo -e "  ${WHITE}Servers:${NC}"
+    echo -e "  ${WHITE}Configured Servers:${NC}"
     for i in "${!DNS_SERVERS[@]}"; do echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+    echo ""
+    echo -e "  ${WHITE}SOCKS5 Address:${NC} ${CYAN}127.0.0.1:${port}${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
@@ -187,7 +226,10 @@ opt_uninstall() {
     echo -ne "  ${YELLOW}Remove config? (y/n): ${NC}"; read -r rc
     [ "$rc" = "y" ] && rm -rf /etc/dnstt-DNS-changer
     systemctl daemon-reload 2>/dev/null
-    echo -e "  ${GREEN}✓ Uninstalled${NC}"; exit 0
+    echo ""
+    echo -e "  ${GREEN}✓ Uninstalled${NC}"
+    echo -e "  ${GRAY}Note: /root/dnstt-client-linux-amd64 and /root/pub.key were NOT removed${NC}"
+    exit 0
 }
 
 check_root
