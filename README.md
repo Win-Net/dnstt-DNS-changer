@@ -53,7 +53,8 @@ winnet-dnstt
 | 7 | Edit Configuration |
 | 8 | Test Connection |
 | 9 | Show Current Config |
-| 10 | Uninstall |
+| 10 | Update Script |
+| 11 | Uninstall |
 | 0 | Exit |
 
 ### Configuration
@@ -147,7 +148,8 @@ winnet-dnstt
 | 7 | ویرایش تنظیمات |
 | 8 | تست اتصال |
 | 9 | نمایش تنظیمات |
-| 10 | حذف کامل |
+| 10 | آپدیت اسکریپت |
+| 11 | حذف |
 | 0 | خروج |
 
 ### تنظیمات
