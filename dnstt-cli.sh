@@ -1,12 +1,13 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.1.0
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.2.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
+REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 PURPLE='\033[0;35m'; CYAN='\033[0;36m'; WHITE='\033[1;37m'
@@ -38,15 +39,8 @@ get_status() { systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && echo "
 show_status_bar() {
     local s=$(get_status)
     [ "$s" = "active" ] && echo -e "  ${WHITE}Service: ${GREEN}● RUNNING${NC}" || echo -e "  ${WHITE}Service: ${RED}● STOPPED${NC}"
-    
-    # Check required files
-    if [ ! -f "/root/dnstt-client-linux-amd64" ]; then
-        echo -e "  ${RED}⚠ Missing: /root/dnstt-client-linux-amd64${NC}"
-    fi
-    if [ ! -f "/root/pub.key" ]; then
-        echo -e "  ${RED}⚠ Missing: /root/pub.key${NC}"
-    fi
-    
+    [ ! -f "/root/dnstt-client-linux-amd64" ] && echo -e "  ${RED}⚠ Missing: /root/dnstt-client-linux-amd64${NC}"
+    [ ! -f "/root/pub.key" ] && echo -e "  ${RED}⚠ Missing: /root/pub.key${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo ""
 }
@@ -63,7 +57,8 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}7${CYAN}]${NC}   Edit Configuration"
     echo -e "  ${CYAN}[${WHITE}8${CYAN}]${NC}   Test Connection"
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Current Config"
-    echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Uninstall"
+    echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Update Script"
+    echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Uninstall"
     echo -e "  ${CYAN}[${WHITE}0${CYAN}]${NC}   Exit"
     echo ""
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
@@ -74,13 +69,10 @@ opt_status() {
     show_banner
     echo -e "  ${WHITE}${BOLD}=== Service Status ===${NC}"
     echo ""
-
-    # File checks
     echo -e "  ${WHITE}Required Files:${NC}"
     [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ /root/dnstt-client-linux-amd64${NC}" || echo -e "    ${RED}✗ /root/dnstt-client-linux-amd64 MISSING${NC}"
     [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ /root/pub.key${NC}" || echo -e "    ${RED}✗ /root/pub.key MISSING${NC}"
     echo ""
-
     local s=$(get_status)
     if [ "$s" = "active" ]; then
         echo -e "  ${GREEN}● RUNNING${NC}"
@@ -108,8 +100,7 @@ opt_start() {
         echo -e "  ${RED}Cannot start! Missing files:${NC}"
         [ ! -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${RED}✗ /root/dnstt-client-linux-amd64${NC}"
         [ ! -f "/root/pub.key" ] && echo -e "    ${RED}✗ /root/pub.key${NC}"
-        echo ""
-        echo -e "  ${YELLOW}Upload these files to /root/ first${NC}"
+        echo ""; echo -e "  ${YELLOW}Upload these files to /root/ first${NC}"
         echo ""; read -p "  Press Enter..."; return
     fi
     echo -e "  ${YELLOW}Starting...${NC}"
@@ -170,22 +161,16 @@ opt_test() {
     show_banner
     echo -e "  ${WHITE}${BOLD}=== Connection Test ===${NC}"
     echo ""
-
-    # File check
     echo -e "  ${WHITE}Files:${NC}"
-    [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ dnstt-client binary${NC}" || echo -e "    ${RED}✗ dnstt-client binary MISSING${NC}"
+    [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ dnstt-client${NC}" || echo -e "    ${RED}✗ dnstt-client MISSING${NC}"
     [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ pub.key${NC}" || echo -e "    ${RED}✗ pub.key MISSING${NC}"
     echo ""
-
     source "$CONFIG_FILE" 2>/dev/null
-
     echo -ne "  ${WHITE}[1/3] Service...${NC}         "
     [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓ Running${NC}" || { echo -e "${RED}✗ Stopped${NC}"; echo ""; read -p "  Press Enter..."; return; }
-
     local port="${LOCAL_LISTEN##*:}"
     echo -ne "  ${WHITE}[2/3] Port $port...${NC}      "
     ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓ Listening${NC}" || echo -e "${RED}✗ Not listening${NC}"
-
     echo -ne "  ${WHITE}[3/3] SOCKS proxy...${NC}     "
     if command -v curl &>/dev/null; then
         if timeout 15 curl -s --socks5 "$LOCAL_LISTEN" "http://httpbin.org/ip" > /tmp/dt_test 2>/dev/null; then
@@ -194,12 +179,10 @@ opt_test() {
         else echo -e "${RED}✗ Failed${NC}"; fi
         rm -f /tmp/dt_test
     else echo -e "${YELLOW}⚠ curl not found${NC}"; fi
-
     echo ""
-    echo -e "  ${WHITE}Configured Servers:${NC}"
+    echo -e "  ${WHITE}Servers:${NC}"
     for i in "${!DNS_SERVERS[@]}"; do echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
-    echo ""
-    echo -e "  ${WHITE}SOCKS5 Address:${NC} ${CYAN}127.0.0.1:${port}${NC}"
+    echo -e "  ${WHITE}SOCKS5:${NC} ${CYAN}127.0.0.1:${port}${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
@@ -211,6 +194,90 @@ opt_showconf() {
         [[ "$line" =~ ^# ]] && echo -e "  ${GRAY}$line${NC}" || echo -e "  ${CYAN}$line${NC}"
     done < "$CONFIG_FILE"
     echo ""; read -p "  Press Enter..."
+}
+
+opt_update() {
+    show_banner
+    echo -e "  ${WHITE}${BOLD}=== Update Script ===${NC}"
+    echo ""
+    echo -e "  ${WHITE}Current version: ${CYAN}$VERSION${NC}"
+    echo -e "  ${GREEN}✓ Your config will NOT be changed${NC}"
+    echo ""
+    echo -ne "  ${WHITE}Check for updates? (y/n): ${NC}"; read -r u
+    [ "$u" != "y" ] && { read -p "  Press Enter..."; return; }
+    echo ""
+
+    echo -e "  ${YELLOW}Downloading updates...${NC}"
+    echo ""
+
+    # Stop service
+    echo -ne "  ${WHITE}[1/4] Stopping service...${NC}    "
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    echo -e "${GREEN}✓${NC}"
+
+    # Update failover
+    echo -ne "  ${WHITE}[2/4] Failover engine...${NC}     "
+    if curl -sL "$REPO/dnstt-failover.sh" -o /tmp/dnstt-failover-new 2>/dev/null; then
+        mv /tmp/dnstt-failover-new /usr/local/bin/dnstt-failover
+        chmod +x /usr/local/bin/dnstt-failover
+        echo -e "${GREEN}✓ Updated${NC}"
+    else
+        echo -e "${RED}✗ Download failed${NC}"
+    fi
+
+    # Update CLI
+    echo -ne "  ${WHITE}[3/4] CLI tool...${NC}            "
+    if curl -sL "$REPO/dnstt-cli.sh" -o /tmp/winnet-dnstt-new 2>/dev/null; then
+        mv /tmp/winnet-dnstt-new /usr/local/bin/winnet-dnstt
+        chmod +x /usr/local/bin/winnet-dnstt
+        echo -e "${GREEN}✓ Updated${NC}"
+    else
+        echo -e "${RED}✗ Download failed${NC}"
+    fi
+
+    # Update service file
+    echo -ne "  ${WHITE}[4/4] Service file...${NC}        "
+    cat > /etc/systemd/system/${SERVICE_NAME}.service << 'SVCEOF'
+[Unit]
+Description=DNSTT-DNS-Changer Tunnel Service
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/usr/local/bin/dnstt-failover
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+    systemctl daemon-reload
+    echo -e "${GREEN}✓ Updated${NC}"
+
+    # Restart
+    echo ""
+    systemctl start "$SERVICE_NAME" 2>/dev/null
+    sleep 3
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "  ${GREEN}✓ Service restarted successfully!${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ Service may need manual start${NC}"
+    fi
+
+    echo ""
+    echo -e "  ${GREEN}✓ Update complete!${NC}"
+    echo -e "  ${GRAY}Config was NOT changed${NC}"
+    echo -e "  ${YELLOW}★ Please restart CLI: type 'winnet-dnstt' again${NC}"
+    echo ""
+    read -p "  Press Enter..."
+    exit 0
 }
 
 opt_uninstall() {
@@ -228,7 +295,7 @@ opt_uninstall() {
     systemctl daemon-reload 2>/dev/null
     echo ""
     echo -e "  ${GREEN}✓ Uninstalled${NC}"
-    echo -e "  ${GRAY}Note: /root/dnstt-client-linux-amd64 and /root/pub.key were NOT removed${NC}"
+    echo -e "  ${GRAY}/root/dnstt-client-linux-amd64 and /root/pub.key were NOT removed${NC}"
     exit 0
 }
 
@@ -238,7 +305,7 @@ while true; do
     case $choice in
         1) opt_status ;; 2) opt_start ;; 3) opt_stop ;; 4) opt_restart ;;
         5) opt_logs ;; 6) opt_switches ;; 7) opt_edit ;; 8) opt_test ;;
-        9) opt_showconf ;; 10) opt_uninstall ;;
+        9) opt_showconf ;; 10) opt_update ;; 11) opt_uninstall ;;
         0) echo -e "  ${GREEN}Bye!${NC}"; exit 0 ;;
         *) echo -e "  ${RED}Invalid!${NC}"; sleep 1 ;;
     esac
