@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.7.1
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.7.2
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.7.1"
+VERSION="1.7.2"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -86,7 +86,7 @@ show_menu() {
 
 save_config() {
     cat > "$CONFIG_FILE" << EOF
-# DNSTT-DNS-Changer Configuration v1.7.1
+# DNSTT-DNS-Changer Configuration v1.7.2
 # Updated: $(date)
 
 DNS_SERVERS=(
