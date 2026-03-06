@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Installer
+# DNSTT-DNS-Changer Installer / Updater
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.1.0"
+VERSION="1.2.0"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
@@ -17,10 +17,86 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; WH
 clear
 echo -e "${CYAN}"
 echo "  ╔═════════════════════════════════════════════╗"
-echo "  ║   DNSTT-DNS-Changer Installer v$VERSION      ║"
+echo "  ║   DNSTT-DNS-Changer v$VERSION                ║"
 echo "  ║   github.com/Win-Net/dnstt-DNS-changer     ║"
 echo "  ╚═════════════════════════════════════════════╝"
 echo -e "${NC}"
+
+# ─── Detect: New Install or Update ───
+IS_UPDATE=false
+if [ -f "/usr/local/bin/dnstt-failover" ] || [ -f "/usr/local/bin/winnet-dnstt" ]; then
+    IS_UPDATE=true
+    echo -e "  ${YELLOW}★ Existing installation detected!${NC}"
+    echo -e "  ${WHITE}  Running in UPDATE mode${NC}"
+    echo -e "  ${GREEN}  Your config will NOT be changed${NC}"
+    echo ""
+    echo -ne "  ${WHITE}Continue update? (y/n): ${NC}"; read -r upd
+    [ "$upd" != "y" ] && { echo -e "  ${GREEN}Cancelled.${NC}"; exit 0; }
+    echo ""
+fi
+
+if [ "$IS_UPDATE" = true ]; then
+    # ════════════════════════════════
+    # UPDATE MODE
+    # ════════════════════════════════
+    
+    echo -e "${WHITE}[1/3] Stopping service...${NC}"
+    systemctl stop "$SERVICE" 2>/dev/null || true
+    echo -e "  ${GREEN}✓ Stopped${NC}"
+
+    echo -e "${WHITE}[2/3] Updating scripts...${NC}"
+    curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover
+    chmod +x /usr/local/bin/dnstt-failover
+    echo -e "  ${GREEN}✓ Failover engine updated${NC}"
+
+    curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt
+    chmod +x /usr/local/bin/winnet-dnstt
+    echo -e "  ${GREEN}✓ CLI tool updated${NC}"
+
+    # Update service file
+    cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
+[Unit]
+Description=DNSTT-DNS-Changer Tunnel Service
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/usr/local/bin/dnstt-failover
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+    systemctl daemon-reload
+    echo -e "  ${GREEN}✓ Service file updated${NC}"
+
+    echo -e "${WHITE}[3/3] Starting service...${NC}"
+    systemctl start "$SERVICE" 2>/dev/null
+    sleep 3
+    systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ Check: winnet-dnstt${NC}"
+
+    echo ""
+    echo -e "${GREEN}  ╔══════════════════════════════════════════════╗"
+    echo -e "  ║         ✓ Update Complete! v$VERSION            ║"
+    echo -e "  ╠══════════════════════════════════════════════╣"
+    echo -e "  ║  ${WHITE}Your config was NOT changed${GREEN}                 ║"
+    echo -e "  ║  CLI: ${WHITE}winnet-dnstt${GREEN}                            ║"
+    echo -e "  ╚══════════════════════════════════════════════╝${NC}"
+    echo ""
+    exit 0
+fi
+
+# ════════════════════════════════
+# NEW INSTALL MODE
+# ════════════════════════════════
 
 # [1] Dependencies
 echo -e "${WHITE}[1/6] Dependencies...${NC}"
@@ -32,21 +108,20 @@ elif command -v yum &>/dev/null; then
 fi
 echo -e "  ${GREEN}✓ Done${NC}"
 
-# [2] Check binary and key
+# [2] Check files
 echo -e "${WHITE}[2/6] Checking files in /root/...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ]; then
     chmod +x /root/dnstt-client-linux-amd64
     echo -e "  ${GREEN}✓ dnstt-client-linux-amd64 found${NC}"
 else
     echo -e "  ${RED}✗ /root/dnstt-client-linux-amd64 NOT found${NC}"
-    echo -e "  ${YELLOW}  You must upload it to /root/ before starting the service${NC}"
+    echo -e "  ${YELLOW}  Upload it to /root/ before starting${NC}"
 fi
-
 if [ -f "/root/pub.key" ]; then
     echo -e "  ${GREEN}✓ pub.key found${NC}"
 else
     echo -e "  ${RED}✗ /root/pub.key NOT found${NC}"
-    echo -e "  ${YELLOW}  You must upload it to /root/ before starting the service${NC}"
+    echo -e "  ${YELLOW}  Upload it to /root/ before starting${NC}"
 fi
 
 # [3] Config
@@ -100,8 +175,7 @@ SOCKS_TEST_ENABLED=false
 SOCKS_TEST_URL="http://www.google.com"
 SOCKS_TEST_TIMEOUT=15
 CONFEOF
-    echo -e "  ${GREEN}✓ Config saved${NC}"
-    echo -e "  ${GREEN}✓ SOCKS5 port: $sp${NC}"
+    echo -e "  ${GREEN}✓ Config saved (SOCKS5 port: $sp)${NC}"
 fi
 
 # [4] Scripts
@@ -112,10 +186,10 @@ echo -e "  ${GREEN}✓ Failover engine${NC}"
 
 curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt
 chmod +x /usr/local/bin/winnet-dnstt
-echo -e "  ${GREEN}✓ CLI tool (winnet-dnstt)${NC}"
+echo -e "  ${GREEN}✓ CLI (winnet-dnstt)${NC}"
 
 # [5] Service
-echo -e "${WHITE}[5/6] Setting up service...${NC}"
+echo -e "${WHITE}[5/6] Service...${NC}"
 cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
 [Unit]
 Description=DNSTT-DNS-Changer Tunnel Service
@@ -139,34 +213,29 @@ WantedBy=multi-user.target
 SVCEOF
 systemctl daemon-reload
 systemctl enable "$SERVICE" >/dev/null 2>&1
-echo -e "  ${GREEN}✓ Service installed${NC}"
+echo -e "  ${GREEN}✓ Installed${NC}"
 
 # [6] Start
 echo -e "${WHITE}[6/6] Ready!${NC}"
-
-# Check if files exist before offering to start
 if [ -f "/root/dnstt-client-linux-amd64" ] && [ -f "/root/pub.key" ]; then
-    echo -ne "  ${WHITE}Start service now? (y/n): ${NC}"; read -r sn
+    echo -ne "  ${WHITE}Start now? (y/n): ${NC}"; read -r sn
     if [ "$sn" = "y" ]; then
         systemctl start "$SERVICE"; sleep 3
         systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ Check: winnet-dnstt${NC}"
     fi
 else
-    echo -e "  ${YELLOW}⚠ Cannot start yet. Missing files!${NC}"
+    echo -e "  ${YELLOW}⚠ Cannot start. Missing files!${NC}"
 fi
 
 echo ""
 echo -e "${GREEN}  ╔══════════════════════════════════════════════════╗"
 echo -e "  ║           ✓ Installation Complete!                ║"
 echo -e "  ╠══════════════════════════════════════════════════╣"
-echo -e "  ║                                                    ║"
-echo -e "  ║  CLI command:  ${WHITE}winnet-dnstt${GREEN}                       ║"
-echo -e "  ║  Edit config:  ${WHITE}nano $INSTALL_DIR/config.conf${GREEN}  ║"
-echo -e "  ║                                                    ║"
+echo -e "  ║  CLI:    ${WHITE}winnet-dnstt${GREEN}                            ║"
+echo -e "  ║  Config: ${WHITE}nano $INSTALL_DIR/config.conf${GREEN}       ║"
 echo -e "  ╠══════════════════════════════════════════════════╣"
-echo -e "  ║  ${YELLOW}⚠ IMPORTANT: Make sure these files exist:${GREEN}       ║"
-echo -e "  ║  ${WHITE}  /root/dnstt-client-linux-amd64${GREEN}                ║"
-echo -e "  ║  ${WHITE}  /root/pub.key${GREEN}                                 ║"
-echo -e "  ║                                                    ║"
+echo -e "  ║  ${YELLOW}Make sure these exist in /root/:${GREEN}              ║"
+echo -e "  ║  ${WHITE}  dnstt-client-linux-amd64${GREEN}                    ║"
+echo -e "  ║  ${WHITE}  pub.key${GREEN}                                     ║"
 echo -e "  ╚══════════════════════════════════════════════════╝${NC}"
 echo ""
