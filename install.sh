@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Installer / Updater v1.7.0
+# DNSTT-DNS-Changer Installer / Updater v1.7.1
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.7.0"
+VERSION="1.7.1"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
