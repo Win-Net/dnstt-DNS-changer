@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Installer / Updater v1.5.0
+# DNSTT-DNS-Changer Installer / Updater v1.6.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.5.0"
+VERSION="1.6.0"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
@@ -26,10 +26,9 @@ echo -e "${NC}"
 IS_UPDATE=false
 if [ -f "/usr/local/bin/dnstt-failover" ] || [ -f "/usr/local/bin/winnet-dnstt" ]; then
     IS_UPDATE=true
-    echo -e "  ${YELLOW}★ Update mode - config will NOT change${NC}"
-    echo ""
+    echo -e "  ${YELLOW}★ Update mode - config safe${NC}"
     echo -ne "  ${WHITE}Continue? (y/n): ${NC}"; read -r upd
-    [ "$upd" != "y" ] && { echo "Cancelled."; exit 0; }
+    [ "$upd" != "y" ] && exit 0
     echo ""
 fi
 
@@ -41,39 +40,40 @@ if [ "$IS_UPDATE" = true ]; then
     echo -e "${WHITE}[2/3] Updating...${NC}"
     curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover && chmod +x /usr/local/bin/dnstt-failover
     curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt && chmod +x /usr/local/bin/winnet-dnstt
-    # chmod binary
     [ -f "/root/dnstt-client-linux-amd64" ] && chmod +x /root/dnstt-client-linux-amd64
+
     cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
 [Unit]
-Description=DNSTT-DNS-Changer Tunnel Service
+Description=DNSTT-DNS-Changer
 After=network.target network-online.target
 Wants=network-online.target
+
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root
 ExecStart=/usr/local/bin/dnstt-failover
-Restart=on-failure
-RestartSec=10s
+Restart=always
+RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-TimeoutStopSec=15
-KillMode=control-group
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
 [Install]
 WantedBy=multi-user.target
 SVCEOF
     systemctl daemon-reload
-    echo -e "  ${GREEN}✓ Updated${NC}"
+    echo -e "  ${GREEN}✓${NC}"
 
     echo -e "${WHITE}[3/3] Starting...${NC}"
     systemctl start "$SERVICE" 2>/dev/null; sleep 3
     systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ winnet-dnstt${NC}"
 
     echo ""
-    echo -e "${GREEN}  ╔═══════════════════════════════╗"
-    echo -e "  ║  ✓ Updated to v$VERSION!      ║"
-    echo -e "  ║  CLI: ${WHITE}winnet-dnstt${GREEN}            ║"
-    echo -e "  ╚═══════════════════════════════╝${NC}"
+    echo -e "${GREEN}  ✓ Updated to v$VERSION | CLI: ${WHITE}winnet-dnstt${NC}"
     exit 0
 fi
 
@@ -87,14 +87,14 @@ elif command -v yum &>/dev/null; then
 fi
 echo -e "  ${GREEN}✓${NC}"
 
-echo -e "${WHITE}[2/6] Checking /root/ files...${NC}"
+echo -e "${WHITE}[2/6] Files...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ]; then
     chmod +x /root/dnstt-client-linux-amd64
-    echo -e "  ${GREEN}✓ dnstt-client found + chmod +x${NC}"
+    echo -e "  ${GREEN}✓ dnstt-client + chmod${NC}"
 else
-    echo -e "  ${RED}✗ dnstt-client NOT found (upload to /root/)${NC}"
+    echo -e "  ${RED}✗ Upload dnstt-client to /root/${NC}"
 fi
-[ -f "/root/pub.key" ] && echo -e "  ${GREEN}✓ pub.key found${NC}" || echo -e "  ${RED}✗ pub.key NOT found (upload to /root/)${NC}"
+[ -f "/root/pub.key" ] && echo -e "  ${GREEN}✓ pub.key${NC}" || echo -e "  ${RED}✗ Upload pub.key to /root/${NC}"
 
 echo -e "${WHITE}[3/6] Config...${NC}"
 mkdir -p "$INSTALL_DIR"
@@ -102,98 +102,85 @@ SKIP_CONF=false
 [ -f "$INSTALL_DIR/config.conf" ] && { echo -ne "  ${YELLOW}Config exists. Overwrite? (y/n): ${NC}"; read -r ow; [ "$ow" != "y" ] && SKIP_CONF=true; }
 
 if [ "$SKIP_CONF" = false ]; then
-    echo ""
-    echo -e "  ${CYAN}Enter DNS servers. Press Enter with empty input when done:${NC}"
+    echo -e "  ${CYAN}Enter DNS servers. Empty = done:${NC}"
     echo ""
     DNS_L=(); DOM_L=(); N=1
     while true; do
-        echo -ne "  ${WHITE}Server $N IP:Port (or Enter to finish): ${NC}"; read -r di
-        if [ -z "$di" ]; then
-            [ ${#DNS_L[@]} -eq 0 ] && { echo -e "  ${RED}Need at least 1 server!${NC}"; continue; } || break
-        fi
-        echo -ne "  ${WHITE}Domain for server $N: ${NC}"; read -r dm
-        [ -z "$dm" ] && { echo -e "  ${RED}Domain required!${NC}"; continue; }
+        echo -ne "  ${WHITE}Server $N (ip:port or Enter=done): ${NC}"; read -r di
+        [ -z "$di" ] && { [ ${#DNS_L[@]} -eq 0 ] && { echo -e "  ${RED}Need 1!${NC}"; continue; } || break; }
+        echo -ne "  ${WHITE}Domain: ${NC}"; read -r dm
+        [ -z "$dm" ] && { echo -e "  ${RED}Required!${NC}"; continue; }
         DNS_L+=("$di"); DOM_L+=("$dm")
-        echo -e "  ${GREEN}✓ Server $N added${NC}"; echo ""; N=$((N+1))
+        echo -e "  ${GREEN}✓${NC}"; N=$((N+1))
     done
-
     echo ""
     echo -ne "  ${WHITE}SOCKS5 port [1080]: ${NC}"; read -r sp; sp=${sp:-1080}
     echo -ne "  ${WHITE}Protocol (udp/dot) [udp]: ${NC}"; read -r pr; pr=${pr:-udp}
 
     cat > "$INSTALL_DIR/config.conf" << CONFEOF
-# DNSTT-DNS-Changer Configuration
-# Generated: $(date)
-
+# DNSTT-DNS-Changer Config $(date)
 DNS_SERVERS=(
 $(for s in "${DNS_L[@]}"; do echo "    \"$s\""; done)
 )
-
 DOMAINS=(
 $(for d in "${DOM_L[@]}"; do echo "    \"$d\""; done)
 )
-
 BINARY="/root/dnstt-client-linux-amd64"
 PUBKEY_FILE="/root/pub.key"
 LOCAL_LISTEN="127.0.0.1:$sp"
 PROTOCOL="$pr"
-HEALTH_CHECK_INTERVAL=30
 MAX_FAILURES=3
 ALL_FAILED_WAIT=30
-AUTO_RESTART_ENABLED=true
-AUTO_RESTART_CHECK=20
+AUTO_RESTART_CHECK=10
 AUTO_RESTART_MAX_TRIES=3
 SOCKS_TEST_ENABLED=false
 SOCKS_TEST_URL="http://www.google.com"
 SOCKS_TEST_TIMEOUT=15
 CONFEOF
-    echo -e "  ${GREEN}✓ Config saved (port: $sp)${NC}"
+    echo -e "  ${GREEN}✓ Saved (port: $sp)${NC}"
 fi
 
 echo -e "${WHITE}[4/6] Scripts...${NC}"
 curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover && chmod +x /usr/local/bin/dnstt-failover
 curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt && chmod +x /usr/local/bin/winnet-dnstt
-echo -e "  ${GREEN}✓ Installed${NC}"
+echo -e "  ${GREEN}✓${NC}"
 
 echo -e "${WHITE}[5/6] Service...${NC}"
 cat > /etc/systemd/system/${SERVICE}.service << 'SVCEOF'
 [Unit]
-Description=DNSTT-DNS-Changer Tunnel Service
+Description=DNSTT-DNS-Changer
 After=network.target network-online.target
 Wants=network-online.target
+
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root
 ExecStart=/usr/local/bin/dnstt-failover
-Restart=on-failure
-RestartSec=10s
+Restart=always
+RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-TimeoutStopSec=15
-KillMode=control-group
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 systemctl daemon-reload; systemctl enable "$SERVICE" >/dev/null 2>&1
 echo -e "  ${GREEN}✓${NC}"
 
-echo -e "${WHITE}[6/6] Ready!${NC}"
+echo -e "${WHITE}[6/6] Start...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ] && [ -f "/root/pub.key" ]; then
-    echo -ne "  ${WHITE}Start now? (y/n): ${NC}"; read -r sn
-    [ "$sn" = "y" ] && { systemctl start "$SERVICE"; sleep 3; systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ winnet-dnstt${NC}"; }
+    echo -ne "  ${WHITE}Start? (y/n): ${NC}"; read -r sn
+    [ "$sn" = "y" ] && { systemctl start "$SERVICE"; sleep 3; systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠${NC}"; }
 else
-    echo -e "  ${YELLOW}⚠ Upload dnstt-client & pub.key to /root/${NC}"
+    echo -e "  ${YELLOW}Upload files to /root/ first${NC}"
 fi
 
 echo ""
-echo -e "${GREEN}  ╔══════════════════════════════════════╗"
-echo -e "  ║    ✓ Installation Complete!           ║"
-echo -e "  ╠══════════════════════════════════════╣"
-echo -e "  ║  CLI: ${WHITE}winnet-dnstt${GREEN}                   ║"
-echo -e "  ╠══════════════════════════════════════╣"
-echo -e "  ║  ${YELLOW}Files needed in /root/:${GREEN}             ║"
-echo -e "  ║  ${WHITE}  dnstt-client-linux-amd64${GREEN}          ║"
-echo -e "  ║  ${WHITE}  pub.key${GREEN}                           ║"
-echo -e "  ╚══════════════════════════════════════╝${NC}"
+echo -e "${GREEN}  ✓ Installed! CLI: ${WHITE}winnet-dnstt${NC}"
+echo -e "${YELLOW}  Files needed: /root/dnstt-client-linux-amd64 + /root/pub.key${NC}"
 echo ""
