@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.7.0
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.7.1
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.7.0"
+VERSION="1.7.1"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -41,14 +41,23 @@ load_config() {
     [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 }
 
+count_dnstt() {
+    local c
+    c=$(ps aux 2>/dev/null | grep -v grep | grep -c "dnstt-client" 2>/dev/null) || c=0
+    echo "$c"
+}
+
 show_status_bar() {
     local s=$(get_status)
     [ "$s" = "active" ] && echo -e "  ${WHITE}Service: ${GREEN}● RUNNING${NC}" || echo -e "  ${WHITE}Service: ${RED}● STOPPED${NC}"
     [ ! -f "/root/dnstt-client-linux-amd64" ] && echo -e "  ${RED}⚠ Missing: /root/dnstt-client-linux-amd64${NC}"
     [ ! -f "/root/pub.key" ] && echo -e "  ${RED}⚠ Missing: /root/pub.key${NC}"
-    # Show active dnstt processes
-    local dc=$(pgrep -c -f "dnstt-client" 2>/dev/null || echo 0)
-    [ "$dc" -gt 0 ] && echo -e "  ${WHITE}DNSTT: ${GREEN}$dc process(es) active${NC}" || echo -e "  ${WHITE}DNSTT: ${RED}no process${NC}"
+    local dc=$(count_dnstt)
+    if [ "$dc" -gt 0 ] 2>/dev/null; then
+        echo -e "  ${WHITE}DNSTT: ${GREEN}$dc process(es) active${NC}"
+    else
+        echo -e "  ${WHITE}DNSTT: ${RED}no process${NC}"
+    fi
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo ""
 }
@@ -77,20 +86,25 @@ show_menu() {
 
 save_config() {
     cat > "$CONFIG_FILE" << EOF
-# DNSTT-DNS-Changer Config - $(date)
+# DNSTT-DNS-Changer Configuration v1.7.1
+# Updated: $(date)
+
 DNS_SERVERS=(
 $(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
 )
+
 DOMAINS=(
 $(for d in "${DOMAINS[@]}"; do echo "    \"$d\""; done)
 )
+
 BINARY="${BINARY:-/root/dnstt-client-linux-amd64}"
 PUBKEY_FILE="${PUBKEY_FILE:-/root/pub.key}"
 LOCAL_LISTEN="${LOCAL_LISTEN:-127.0.0.1:1080}"
 PROTOCOL="${PROTOCOL:-udp}"
-MAX_FAILURES=${MAX_FAILURES:-3}
+AUTO_RESTART_CHECK=${AUTO_RESTART_CHECK:-15}
+MAX_FAILURES=${MAX_FAILURES:-2}
 ALL_FAILED_WAIT=${ALL_FAILED_WAIT:-30}
-AUTO_RESTART_CHECK=${AUTO_RESTART_CHECK:-10}
+AUTO_RESTART_ENABLED=${AUTO_RESTART_ENABLED:-true}
 AUTO_RESTART_MAX_TRIES=${AUTO_RESTART_MAX_TRIES:-3}
 SOCKS_TEST_ENABLED=${SOCKS_TEST_ENABLED:-false}
 SOCKS_TEST_URL="${SOCKS_TEST_URL:-http://www.google.com}"
@@ -98,10 +112,21 @@ SOCKS_TEST_TIMEOUT=${SOCKS_TEST_TIMEOUT:-15}
 EOF
 }
 
+full_stop() {
+    systemctl stop "$SERVICE_NAME" 2>/dev/null
+    pkill -9 -f "dnstt-client" 2>/dev/null
+    sleep 2
+}
+
+full_start() {
+    chmod +x /root/dnstt-client-linux-amd64 2>/dev/null
+    systemctl start "$SERVICE_NAME" 2>/dev/null
+    sleep 5
+}
+
 opt_status() {
     show_banner
-    echo -e "  ${WHITE}${BOLD}=== Status ===${NC}"
-    echo ""
+    echo -e "  ${WHITE}${BOLD}=== Status ===${NC}"; echo ""
     echo -e "  ${WHITE}Files:${NC}"
     [ -f "/root/dnstt-client-linux-amd64" ] && echo -e "    ${GREEN}✓ dnstt-client${NC}" || echo -e "    ${RED}✗ dnstt-client${NC}"
     [ -f "/root/pub.key" ] && echo -e "    ${GREEN}✓ pub.key${NC}" || echo -e "    ${RED}✗ pub.key${NC}"
@@ -114,7 +139,7 @@ opt_status() {
         [ -n "$up" ] && echo -e "  ${WHITE}Uptime:${NC} $up"
         load_config
         echo -e "  ${WHITE}SOCKS5:${NC} ${LOCAL_LISTEN}"
-        local dc=$(pgrep -c -f "dnstt-client" 2>/dev/null || echo 0)
+        local dc=$(count_dnstt)
         echo -e "  ${WHITE}DNSTT:${NC}  $dc process(es)"
         local sw=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -c "SWITCH" || echo 0)
         echo -e "  ${WHITE}Switches:${NC} $sw"
@@ -131,37 +156,34 @@ opt_start() {
     if [ ! -f "/root/dnstt-client-linux-amd64" ] || [ ! -f "/root/pub.key" ]; then
         echo -e "  ${RED}Missing files in /root/!${NC}"; echo ""; read -p "  Press Enter..."; return
     fi
-    chmod +x /root/dnstt-client-linux-amd64
     echo -e "  ${YELLOW}Starting...${NC}"
-    systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
+    full_start
     [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Started${NC}" || echo -e "  ${RED}✗ Failed${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
 opt_stop() {
     show_banner; echo -e "  ${YELLOW}Stopping...${NC}"
-    systemctl stop "$SERVICE_NAME" 2>/dev/null
-    pkill -9 -f "dnstt-client" 2>/dev/null; sleep 1
+    full_stop
     echo -e "  ${GREEN}✓${NC}"; echo ""; read -p "  Press Enter..."
 }
 
 opt_restart() {
     show_banner; echo -e "  ${YELLOW}Restarting...${NC}"
-    systemctl stop "$SERVICE_NAME" 2>/dev/null
-    pkill -9 -f "dnstt-client" 2>/dev/null; sleep 2
-    systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
-    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓${NC}" || echo -e "  ${RED}✗${NC}"
+    full_stop
+    full_start
+    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Restarted${NC}" || echo -e "  ${RED}✗ Failed${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
 opt_logs() {
     show_banner
-    echo -e "  ${WHITE}=== Live Logs ===${NC} ${GRAY}(Ctrl+C to stop)${NC}"
-    echo ""
+    echo -e "  ${WHITE}=== Live Logs ===${NC} ${GRAY}(Ctrl+C to stop)${NC}"; echo ""
     journalctl -u "$SERVICE_NAME" -f --no-pager 2>/dev/null | while IFS= read -r line; do
         if echo "$line" | grep -q "ERROR"; then echo -e "  ${RED}$line${NC}"
         elif echo "$line" | grep -q "SWITCH"; then echo -e "  ${PURPLE}$line${NC}"
         elif echo "$line" | grep -q "RESTART"; then echo -e "  ${CYAN}$line${NC}"
+        elif echo "$line" | grep -q "WARNING"; then echo -e "  ${YELLOW}$line${NC}"
         else echo -e "  ${GREEN}$line${NC}"; fi
     done
 }
@@ -169,8 +191,8 @@ opt_logs() {
 opt_history() {
     show_banner
     echo -e "  ${WHITE}=== History ===${NC}"; echo ""
-    local logs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -E "SWITCH|RESTART|ERROR.*died|ERROR.*DEAD")
-    [ -z "$logs" ] && echo -e "  ${GRAY}Nothing yet.${NC}" || echo "$logs" | tail -30 | sed 's/^/  /'
+    local logs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -E "SWITCH|ERROR|WARNING" | tail -40)
+    [ -z "$logs" ] && echo -e "  ${GRAY}Nothing yet.${NC}" || echo "$logs" | sed 's/^/  /'
     echo ""; read -p "  Press Enter..."
 }
 
@@ -178,21 +200,24 @@ opt_edit() {
     local ed="nano"; command -v nano &>/dev/null || ed="vi"
     $ed "$CONFIG_FILE"
     echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r a
-    [ "$a" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓${NC}"; }
+    [ "$a" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
     read -p "  Press Enter..."
 }
 
 opt_test() {
     show_banner; echo -e "  ${WHITE}=== Test ===${NC}"; echo ""
     load_config
-    echo -ne "  Service: "; [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓${NC}" || { echo -e "${RED}✗${NC}"; read -p "  Press Enter..."; return; }
+    echo -ne "  Service:  "; [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓ Running${NC}" || { echo -e "${RED}✗ Stopped${NC}"; read -p "  Press Enter..."; return; }
     local port="${LOCAL_LISTEN##*:}"
-    echo -ne "  Port $port: "; ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
+    echo -ne "  Port $port: "; ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓ Listening${NC}" || echo -e "${RED}✗ Closed${NC}"
     echo -ne "  SOCKS:    "
     if command -v curl &>/dev/null; then
-        if timeout 15 curl -s --socks5 "$LOCAL_LISTEN" "http://httpbin.org/ip" > /tmp/dt 2>/dev/null; then
-            echo -e "${GREEN}✓ $(grep -o '"origin":"[^"]*"' /tmp/dt 2>/dev/null || cat /tmp/dt)${NC}"
-        else echo -e "${RED}✗${NC}"; fi; rm -f /tmp/dt
+        if timeout 15 curl -s --socks5 "$LOCAL_LISTEN" "http://httpbin.org/ip" -o /tmp/dt 2>/dev/null; then
+            echo -e "${GREEN}✓ Working $(cat /tmp/dt 2>/dev/null)${NC}"
+        else
+            echo -e "${RED}✗ Not working${NC}"
+        fi
+        rm -f /tmp/dt
     else echo -e "${YELLOW}no curl${NC}"; fi
     echo ""; echo -e "  ${WHITE}Servers:${NC}"
     for i in "${!DNS_SERVERS[@]}"; do echo -e "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
@@ -208,7 +233,7 @@ opt_showconf() {
 opt_add_dns() {
     show_banner; echo -e "  ${WHITE}=== Add DNS ===${NC}"; echo ""
     load_config
-    [ ${#DNS_SERVERS[@]} -gt 0 ] && { echo -e "  ${WHITE}Current:${NC}"; for i in "${!DNS_SERVERS[@]}"; do echo -e "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done; echo ""; }
+    [ ${#DNS_SERVERS[@]} -gt 0 ] && { echo -e "  ${WHITE}Current:${NC}"; for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done; echo ""; }
     echo -e "  ${CYAN}Enter servers. Empty = done:${NC}"; echo ""
     local added=0 num=$((${#DNS_SERVERS[@]}+1))
     while true; do
@@ -221,9 +246,9 @@ opt_add_dns() {
     done
     if [ $added -gt 0 ]; then
         save_config; echo -e "  ${GREEN}✓ $added added${NC}"; echo ""
-        for i in "${!DNS_SERVERS[@]}"; do echo -e "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+        for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
         echo ""; echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
-        [ "$r" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓${NC}"; }
+        [ "$r" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
     fi
     read -p "  Press Enter..."
 }
@@ -232,7 +257,7 @@ opt_remove_dns() {
     show_banner; echo -e "  ${WHITE}=== Remove DNS ===${NC}"; echo ""
     load_config
     [ ${#DNS_SERVERS[@]} -le 1 ] && { echo -e "  ${RED}Need at least 1!${NC}"; read -p "  Press Enter..."; return; }
-    for i in "${!DNS_SERVERS[@]}"; do echo -e "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+    for i in "${!DNS_SERVERS[@]}"; do echo "    ${CYAN}[$((i+1))]${NC} ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
     echo ""; echo -ne "  Remove # (0=cancel): "; read -r rn
     [ -z "$rn" ] || [ "$rn" = "0" ] && { read -p "  Press Enter..."; return; }
     [[ ! "$rn" =~ ^[0-9]+$ ]] && { echo -e "  ${RED}Invalid${NC}"; read -p "  Press Enter..."; return; }
@@ -245,9 +270,9 @@ opt_remove_dns() {
     for i in "${!DNS_SERVERS[@]}"; do [ "$i" -ne "$idx" ] && { td+=("${DNS_SERVERS[$i]}"); tm+=("${DOMAINS[$i]}"); }; done
     DNS_SERVERS=("${td[@]}"); DOMAINS=("${tm[@]}")
     save_config; echo -e "  ${GREEN}✓ Removed${NC}"; echo ""
-    for i in "${!DNS_SERVERS[@]}"; do echo -e "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+    for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
     echo ""; echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
-    [ "$r" = "y" ] && { systemctl restart "$SERVICE_NAME" 2>/dev/null; sleep 2; echo -e "  ${GREEN}✓${NC}"; }
+    [ "$r" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
     read -p "  Press Enter..."
 }
 
@@ -256,7 +281,7 @@ opt_update() {
     echo -e "  Current: ${CYAN}$VERSION${NC} | Config: ${GREEN}safe${NC}"
     echo -ne "  Update? (y/n): "; read -r u
     [ "$u" != "y" ] && { read -p "  Press Enter..."; return; }
-    systemctl stop "$SERVICE_NAME" 2>/dev/null; pkill -9 -f "dnstt-client" 2>/dev/null
+    full_stop
     echo -ne "  Failover... "; curl -sL "$REPO/dnstt-failover.sh" -o /usr/local/bin/dnstt-failover && chmod +x /usr/local/bin/dnstt-failover && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
     echo -ne "  CLI...      "; curl -sL "$REPO/dnstt-cli.sh" -o /usr/local/bin/winnet-dnstt && chmod +x /usr/local/bin/winnet-dnstt && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
     cat > /etc/systemd/system/${SERVICE_NAME}.service << 'SVCEOF'
@@ -281,7 +306,7 @@ SendSIGKILL=yes
 WantedBy=multi-user.target
 SVCEOF
     systemctl daemon-reload
-    systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 3
+    full_start
     systemctl is-active --quiet "$SERVICE_NAME" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠${NC}"
     echo -e "  ${YELLOW}Run winnet-dnstt again${NC}"; echo ""; read -p "  Press Enter..."; exit 0
 }
@@ -290,8 +315,8 @@ opt_uninstall() {
     show_banner; echo -e "  ${RED}=== Uninstall ===${NC}"
     echo -ne "  Type 'yes': "; read -r c
     [ "$c" != "yes" ] && { read -p "  Press Enter..."; return; }
-    systemctl stop "$SERVICE_NAME" 2>/dev/null; systemctl disable "$SERVICE_NAME" 2>/dev/null
-    pkill -9 -f "dnstt-client" 2>/dev/null
+    full_stop
+    systemctl disable "$SERVICE_NAME" 2>/dev/null
     rm -f /etc/systemd/system/${SERVICE_NAME}.service /usr/local/bin/dnstt-failover /usr/local/bin/winnet-dnstt
     echo -ne "  Remove config? (y/n): "; read -r rc
     [ "$rc" = "y" ] && rm -rf /etc/dnstt-DNS-changer
