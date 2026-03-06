@@ -1,9 +1,5 @@
 <div align="center">
 
-<img src="assets/banner.svg" width="700">
-
-<br><br>
-
 [![GitHub Stars](https://img.shields.io/github/stars/Win-Net/dnstt-DNS-changer?style=for-the-badge&color=00d2ff)](https://github.com/Win-Net/dnstt-DNS-changer)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux-blue?style=for-the-badge)]()
