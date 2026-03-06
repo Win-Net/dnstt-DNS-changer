@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v1.7.2 - Fixed
+# DNSTT-DNS-Changer v1.8.0 - Fixed
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
@@ -133,7 +133,7 @@ try_all_servers() {
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # ═══ MAIN ═══
-log "INFO" "v1.7.2 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+log "INFO" "v1.8.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
     log "WARNING" "Installing curl..."
