@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.7.2
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.8.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.7.2"
+VERSION="1.8.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -76,8 +76,9 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Config"
     echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Servers"
     echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Remove DNS Server"
-    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Update Script"
-    echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Uninstall"
+    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add Clean DNS"
+    echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Update Script"
+    echo -e "  ${CYAN}[${WHITE}14${CYAN}]${NC}  Uninstall"
     echo -e "  ${CYAN}[${WHITE}0${CYAN}]${NC}   Exit"
     echo ""
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
@@ -86,7 +87,7 @@ show_menu() {
 
 save_config() {
     cat > "$CONFIG_FILE" << EOF
-# DNSTT-DNS-Changer Configuration v1.7.2
+# DNSTT-DNS-Changer Configuration v1.8.0
 # Updated: $(date)
 
 DNS_SERVERS=(
@@ -170,9 +171,8 @@ opt_stop() {
 
 opt_restart() {
     show_banner; echo -e "  ${YELLOW}Restarting...${NC}"
-    full_stop
-    full_start
-    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓ Restarted${NC}" || echo -e "  ${RED}✗ Failed${NC}"
+    full_stop; full_start
+    [ "$(get_status)" = "active" ] && echo -e "  ${GREEN}✓${NC}" || echo -e "  ${RED}✗${NC}"
     echo ""; read -p "  Press Enter..."
 }
 
@@ -182,7 +182,6 @@ opt_logs() {
     journalctl -u "$SERVICE_NAME" -f --no-pager 2>/dev/null | while IFS= read -r line; do
         if echo "$line" | grep -q "ERROR"; then echo -e "  ${RED}$line${NC}"
         elif echo "$line" | grep -q "SWITCH"; then echo -e "  ${PURPLE}$line${NC}"
-        elif echo "$line" | grep -q "RESTART"; then echo -e "  ${CYAN}$line${NC}"
         elif echo "$line" | grep -q "WARNING"; then echo -e "  ${YELLOW}$line${NC}"
         else echo -e "  ${GREEN}$line${NC}"; fi
     done
@@ -191,7 +190,7 @@ opt_logs() {
 opt_history() {
     show_banner
     echo -e "  ${WHITE}=== History ===${NC}"; echo ""
-    local logs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -E "SWITCH|ERROR|WARNING" | tail -40)
+    local logs=$(journalctl -u "$SERVICE_NAME" --no-pager 2>/dev/null | grep -E "SWITCH|ERROR|Connected" | tail -40)
     [ -z "$logs" ] && echo -e "  ${GRAY}Nothing yet.${NC}" || echo "$logs" | sed 's/^/  /'
     echo ""; read -p "  Press Enter..."
 }
@@ -207,20 +206,17 @@ opt_edit() {
 opt_test() {
     show_banner; echo -e "  ${WHITE}=== Test ===${NC}"; echo ""
     load_config
-    echo -ne "  Service:  "; [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓ Running${NC}" || { echo -e "${RED}✗ Stopped${NC}"; read -p "  Press Enter..."; return; }
+    echo -ne "  Service:  "; [ "$(get_status)" = "active" ] && echo -e "${GREEN}✓${NC}" || { echo -e "${RED}✗${NC}"; read -p "  Press Enter..."; return; }
     local port="${LOCAL_LISTEN##*:}"
-    echo -ne "  Port $port: "; ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓ Listening${NC}" || echo -e "${RED}✗ Closed${NC}"
+    echo -ne "  Port $port: "; ss -tlnp 2>/dev/null | grep -q ":${port}" && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
     echo -ne "  SOCKS:    "
     if command -v curl &>/dev/null; then
         if timeout 15 curl -s --socks5 "$LOCAL_LISTEN" "http://httpbin.org/ip" -o /tmp/dt 2>/dev/null; then
-            echo -e "${GREEN}✓ Working $(cat /tmp/dt 2>/dev/null)${NC}"
-        else
-            echo -e "${RED}✗ Not working${NC}"
-        fi
-        rm -f /tmp/dt
+            echo -e "${GREEN}✓ $(cat /tmp/dt 2>/dev/null)${NC}"
+        else echo -e "${RED}✗${NC}"; fi; rm -f /tmp/dt
     else echo -e "${YELLOW}no curl${NC}"; fi
-    echo ""; echo -e "  ${WHITE}Servers:${NC}"
-    for i in "${!DNS_SERVERS[@]}"; do echo -e "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+    echo ""; echo -e "  ${WHITE}Servers (${#DNS_SERVERS[@]}):${NC}"
+    for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
     echo ""; read -p "  Press Enter..."
 }
 
@@ -233,7 +229,7 @@ opt_showconf() {
 opt_add_dns() {
     show_banner; echo -e "  ${WHITE}=== Add DNS ===${NC}"; echo ""
     load_config
-    [ ${#DNS_SERVERS[@]} -gt 0 ] && { echo -e "  ${WHITE}Current:${NC}"; for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done; echo ""; }
+    [ ${#DNS_SERVERS[@]} -gt 0 ] && { echo -e "  ${WHITE}Current (${#DNS_SERVERS[@]}):${NC}"; for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done; echo ""; }
     echo -e "  ${CYAN}Enter servers. Empty = done:${NC}"; echo ""
     local added=0 num=$((${#DNS_SERVERS[@]}+1))
     while true; do
@@ -245,8 +241,7 @@ opt_add_dns() {
         echo -e "  ${GREEN}✓${NC}"; echo ""
     done
     if [ $added -gt 0 ]; then
-        save_config; echo -e "  ${GREEN}✓ $added added${NC}"; echo ""
-        for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+        save_config; echo -e "  ${GREEN}✓ $added added. Total: ${#DNS_SERVERS[@]}${NC}"
         echo ""; echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
         [ "$r" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
     fi
@@ -263,16 +258,174 @@ opt_remove_dns() {
     [[ ! "$rn" =~ ^[0-9]+$ ]] && { echo -e "  ${RED}Invalid${NC}"; read -p "  Press Enter..."; return; }
     local idx=$((rn-1))
     [ $idx -lt 0 ] || [ $idx -ge ${#DNS_SERVERS[@]} ] && { echo -e "  ${RED}Invalid${NC}"; read -p "  Press Enter..."; return; }
-    echo -e "  Remove ${DNS_SERVERS[$idx]}?"
-    echo -ne "  ${RED}Sure? (y/n): ${NC}"; read -r cf
+    echo -ne "  ${RED}Remove ${DNS_SERVERS[$idx]}? (y/n): ${NC}"; read -r cf
     [ "$cf" != "y" ] && { read -p "  Press Enter..."; return; }
     local td=() tm=()
     for i in "${!DNS_SERVERS[@]}"; do [ "$i" -ne "$idx" ] && { td+=("${DNS_SERVERS[$i]}"); tm+=("${DOMAINS[$i]}"); }; done
     DNS_SERVERS=("${td[@]}"); DOMAINS=("${tm[@]}")
-    save_config; echo -e "  ${GREEN}✓ Removed${NC}"; echo ""
-    for i in "${!DNS_SERVERS[@]}"; do echo "    [$((i+1))] ${DNS_SERVERS[$i]} -> ${DOMAINS[$i]}"; done
+    save_config; echo -e "  ${GREEN}✓ Removed. Remaining: ${#DNS_SERVERS[@]}${NC}"
     echo ""; echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
     [ "$r" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
+    read -p "  Press Enter..."
+}
+
+# ═══════════════════════════════════════════════════════════
+# DNS SCANNER
+# ═══════════════════════════════════════════════════════════
+opt_scan_dns() {
+    show_banner
+    echo -e "  ${WHITE}${BOLD}=== DNS Scanner ===${NC}"
+    echo ""
+    echo -e "  ${CYAN}This will scan random IP ranges to find working${NC}"
+    echo -e "  ${CYAN}open DNS resolvers and add them to your config.${NC}"
+    echo ""
+
+    # Check dig
+    if ! command -v dig &>/dev/null; then
+        echo -e "  ${YELLOW}Installing dnsutils...${NC}"
+        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null
+        if ! command -v dig &>/dev/null; then
+            echo -e "  ${RED}Cannot install dig! Install manually: apt install dnsutils${NC}"
+            read -p "  Press Enter..."; return
+        fi
+        echo -e "  ${GREEN}✓ Installed${NC}"
+    fi
+
+    # Settings
+    echo -ne "  ${WHITE}How many clean DNS to find? [30]: ${NC}"
+    read -r scan_target
+    scan_target=${scan_target:-30}
+
+    echo -ne "  ${WHITE}Domain for all found DNS: ${NC}"
+    read -r scan_domain
+    if [ -z "$scan_domain" ]; then
+        echo -e "  ${RED}Domain required!${NC}"
+        read -p "  Press Enter..."; return
+    fi
+
+    echo -ne "  ${WHITE}DNS port [53]: ${NC}"
+    read -r scan_port
+    scan_port=${scan_port:-53}
+
+    echo -ne "  ${WHITE}Replace current DNS list or add to it? (replace/add) [add]: ${NC}"
+    read -r scan_mode
+    scan_mode=${scan_mode:-add}
+
+    echo ""
+    echo -e "  ${YELLOW}Scanning... Target: $scan_target clean DNS${NC}"
+    echo -e "  ${GRAY}This may take a few minutes...${NC}"
+    echo ""
+
+    load_config
+
+    if [ "$scan_mode" = "replace" ]; then
+        DNS_SERVERS=()
+        DOMAINS=()
+    fi
+
+    local found=0
+    local tested=0
+    local start_time=$(date +%s)
+
+    # IP ranges known to have open resolvers
+    local RANGES=(
+        "1.0" "1.1" "4.2" "5.2" "8.8" "8.26"
+        "9.9" "23.253" "37.235" "45.33" "45.90"
+        "46.182" "51.15" "62.210" "64.6" "66.70"
+        "74.82" "77.88" "78.46" "80.67" "80.80"
+        "84.200" "85.214" "89.233" "91.239"
+        "94.140" "101.226" "103.86" "104.236"
+        "107.150" "108.61" "114.114" "115.159"
+        "116.202" "116.203" "119.29" "123.125"
+        "134.195" "136.144" "139.59" "139.162"
+        "149.112" "156.154" "159.69" "159.89"
+        "168.95" "172.64" "172.104" "176.9"
+        "176.103" "178.79" "185.121" "185.184"
+        "185.222" "185.228" "185.253" "188.166"
+        "193.17" "193.110" "194.36" "195.10"
+        "195.46" "198.101" "199.85" "203.67"
+        "203.198" "207.148" "208.67" "208.76"
+        "209.244" "216.146" "217.160"
+    )
+
+    while [ $found -lt $scan_target ]; do
+        # Pick random range
+        local range_idx=$((RANDOM % ${#RANGES[@]}))
+        local range="${RANGES[$range_idx]}"
+
+        # Generate random last two octets
+        local oct3=$((RANDOM % 256))
+        local oct4=$((RANDOM % 254 + 1))
+        local ip="${range}.${oct3}.${oct4}"
+
+        tested=$((tested + 1))
+
+        # Quick test: can this IP respond to DNS query?
+        local result=$(timeout 2 dig @"$ip" google.com +short +time=1 +tries=1 2>/dev/null)
+
+        if [ -n "$result" ] && echo "$result" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+            # Verify: test again with different domain
+            local result2=$(timeout 2 dig @"$ip" cloudflare.com +short +time=1 +tries=1 2>/dev/null)
+
+            if [ -n "$result2" ] && echo "$result2" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+                # Check if already in list
+                local already=false
+                for existing in "${DNS_SERVERS[@]}"; do
+                    [ "$existing" = "${ip}:${scan_port}" ] && { already=true; break; }
+                done
+
+                if [ "$already" = false ]; then
+                    found=$((found + 1))
+                    DNS_SERVERS+=("${ip}:${scan_port}")
+                    DOMAINS+=("$scan_domain")
+                    echo -e "  ${GREEN}[${found}/${scan_target}]${NC} Found: ${CYAN}${ip}:${scan_port}${NC} ${GRAY}(tested: $tested)${NC}"
+                fi
+            fi
+        fi
+
+        # Progress every 50 tests
+        if [ $((tested % 50)) -eq 0 ] && [ $found -lt $scan_target ]; then
+            local elapsed=$(( $(date +%s) - start_time ))
+            echo -e "  ${GRAY}... tested $tested IPs, found $found DNS, ${elapsed}s elapsed${NC}"
+        fi
+
+        # Safety: don't scan forever
+        if [ $tested -ge 5000 ] && [ $found -lt $scan_target ]; then
+            echo -e "  ${YELLOW}Reached 5000 tests. Found $found out of $scan_target${NC}"
+            break
+        fi
+    done
+
+    local total_time=$(( $(date +%s) - start_time ))
+
+    echo ""
+    echo -e "  ${WHITE}═══════════════════════════════════${NC}"
+    echo -e "  ${WHITE}Scan Complete!${NC}"
+    echo -e "  ${WHITE}Found:${NC}   ${GREEN}$found${NC} clean DNS"
+    echo -e "  ${WHITE}Tested:${NC}  $tested IPs"
+    echo -e "  ${WHITE}Time:${NC}    ${total_time}s"
+    echo -e "  ${WHITE}Total:${NC}   ${#DNS_SERVERS[@]} DNS in config"
+    echo -e "  ${WHITE}═══════════════════════════════════${NC}"
+
+    if [ $found -gt 0 ]; then
+        echo ""
+        echo -ne "  ${WHITE}Save to config? (y/n): ${NC}"
+        read -r save_yn
+        if [ "$save_yn" = "y" ]; then
+            save_config
+            echo -e "  ${GREEN}✓ Saved!${NC}"
+            echo ""
+            echo -ne "  ${YELLOW}Restart service? (y/n): ${NC}"
+            read -r restart_yn
+            if [ "$restart_yn" = "y" ]; then
+                full_stop; full_start
+                echo -e "  ${GREEN}✓ Restarted${NC}"
+            fi
+        fi
+    else
+        echo -e "  ${RED}No DNS found. Try again or add manually.${NC}"
+    fi
+
     read -p "  Press Enter..."
 }
 
@@ -315,8 +468,7 @@ opt_uninstall() {
     show_banner; echo -e "  ${RED}=== Uninstall ===${NC}"
     echo -ne "  Type 'yes': "; read -r c
     [ "$c" != "yes" ] && { read -p "  Press Enter..."; return; }
-    full_stop
-    systemctl disable "$SERVICE_NAME" 2>/dev/null
+    full_stop; systemctl disable "$SERVICE_NAME" 2>/dev/null
     rm -f /etc/systemd/system/${SERVICE_NAME}.service /usr/local/bin/dnstt-failover /usr/local/bin/winnet-dnstt
     echo -ne "  Remove config? (y/n): "; read -r rc
     [ "$rc" = "y" ] && rm -rf /etc/dnstt-DNS-changer
@@ -324,6 +476,7 @@ opt_uninstall() {
     echo -e "  ${GREEN}✓${NC}"; exit 0
 }
 
+# ═══ MAIN ═══
 check_root
 while true; do
     show_banner; show_status_bar; show_menu; read -r choice; echo -e "${NC}"
@@ -331,7 +484,7 @@ while true; do
         1) opt_status ;; 2) opt_start ;; 3) opt_stop ;; 4) opt_restart ;;
         5) opt_logs ;; 6) opt_history ;; 7) opt_edit ;; 8) opt_test ;;
         9) opt_showconf ;; 10) opt_add_dns ;; 11) opt_remove_dns ;;
-        12) opt_update ;; 13) opt_uninstall ;;
+        12) opt_scan_dns ;; 13) opt_update ;; 14) opt_uninstall ;;
         0) echo -e "  ${GREEN}Bye!${NC}"; exit 0 ;;
         *) echo -e "  ${RED}Invalid!${NC}"; sleep 1 ;;
     esac
