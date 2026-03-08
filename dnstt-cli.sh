@@ -251,6 +251,17 @@ SCAN_SUBNETS=(
 
 check_root() { [ "$EUID" -ne 0 ] && { echo -e "${RED}Run as root!${NC}"; exit 1; }; }
 
+find_free_port() {
+    local port
+    for port in $(shuf -i 19000-19500 -n 50 2>/dev/null || seq 19000 19050); do
+        if ! ss -tlnp 2>/dev/null | grep -q ":${port}"; then
+            echo "$port"
+            return 0
+        fi
+    done
+    echo "19999"
+}
+
 show_banner() {
     clear
     echo -e "${CYAN}"
@@ -338,7 +349,7 @@ AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
 AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN:-}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
-SCAN_TEST_PORT=${SCAN_TEST_PORT:-19999}
+SCAN_TEST_PORT=0
 EOF
 }
 
@@ -356,10 +367,10 @@ shuffle_array() {
 kill_scan_dnstt() {
     local pid="$1"
     local sport="$2"
-    kill -9 "$pid" 2>/dev/null
-    wait "$pid" 2>/dev/null
+    kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
     if command -v fuser &>/dev/null; then
-        fuser -k ${sport}/tcp 2>/dev/null
+        fuser -k ${sport}/tcp 2>/dev/null || true
     fi
     local i=0
     while ss -tlnp 2>/dev/null | grep -q ":${sport}" && [ $i -lt 5 ]; do
@@ -371,21 +382,28 @@ real_test_dns() {
     local ip="$1"
     local dns_port="$2"
     local domain="$3"
-    local sport="${4:-19999}"
+    local sport
+    sport=$(find_free_port)
     local test_listen="127.0.0.1:${sport}"
     local binary="${BINARY:-/root/dnstt-client-linux-amd64}"
     local pubkey="${PUBKEY_FILE:-/root/pub.key}"
     local proto="${PROTOCOL:-udp}"
 
-    # Kill any leftover scan process on this port
-    local old_pids=$(pgrep -f "dnstt-client.*${sport}" 2>/dev/null)
-    for op in $old_pids; do kill -9 "$op" 2>/dev/null; done
+    load_config 2>/dev/null || true
+    binary="${BINARY:-/root/dnstt-client-linux-amd64}"
+    pubkey="${PUBKEY_FILE:-/root/pub.key}"
+    proto="${PROTOCOL:-udp}"
+
+    # Kill any leftover on this port
+    local old_pids
+    old_pids=$(pgrep -f "dnstt-client.*${sport}" 2>/dev/null) || true
+    for op in $old_pids; do kill -9 "$op" 2>/dev/null || true; done
     if command -v fuser &>/dev/null; then
-        fuser -k ${sport}/tcp 2>/dev/null
+        fuser -k ${sport}/tcp 2>/dev/null || true
     fi
     sleep 1
 
-    # Start dnstt with this DNS
+    # Start dnstt
     local scan_pid
     if [ "$proto" = "dot" ]; then
         $binary -dot "${ip}:${dns_port}" -pubkey-file "$pubkey" "$domain" "$test_listen" &
@@ -395,12 +413,10 @@ real_test_dns() {
     scan_pid=$!
     sleep 5
 
-    # Check process alive
     if ! kill -0 $scan_pid 2>/dev/null; then
         return 1
     fi
 
-    # Check port open
     if ! ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
         kill_scan_dnstt "$scan_pid" "$sport"
         return 1
@@ -422,8 +438,17 @@ real_test_dns() {
     return 1
 }
 
-full_stop() { systemctl stop "$SERVICE_NAME" 2>/dev/null; pkill -9 -f "dnstt-client" 2>/dev/null; sleep 2; }
-full_start() { chmod +x /root/dnstt-client-linux-amd64 2>/dev/null; systemctl start "$SERVICE_NAME" 2>/dev/null; sleep 5; }
+full_stop() {
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    pkill -9 -f "dnstt-client" 2>/dev/null || true
+    sleep 2
+}
+
+full_start() {
+    chmod +x /root/dnstt-client-linux-amd64 2>/dev/null || true
+    systemctl start "$SERVICE_NAME" 2>/dev/null || true
+    sleep 5
+}
 
 opt_status() {
     show_banner; echo -e "  ${WHITE}${BOLD}=== Status ===${NC}"; echo ""
@@ -543,12 +568,11 @@ opt_scan_dns() {
     echo -ne "  ${WHITE}Replace or add? (replace/add) [add]: ${NC}"; read -r sm; sm=${sm:-add}
 
     load_config
-    local sport=${SCAN_TEST_PORT:-19999}
 
     echo ""
     echo -e "  ${YELLOW}⚠ Service will be stopped during scan${NC}"
     echo -e "  ${YELLOW}⚠ Each DNS takes ~20s to test (real dnstt connection)${NC}"
-    echo -e "  ${YELLOW}⚠ Estimated time: ~$((${#KNOWN_DNS_LIST[@]} * 20 / 60)) minutes for full scan${NC}"
+    echo -e "  ${YELLOW}⚠ Estimated time: ~$((${#KNOWN_DNS_LIST[@]} * 20 / 60)) minutes max${NC}"
     echo -ne "  ${WHITE}Continue? (y/n): ${NC}"; read -r cont
     [ "$cont" != "y" ] && { read -p "  Press Enter..."; return; }
 
@@ -567,14 +591,13 @@ opt_scan_dns() {
 
     echo ""
     echo -e "  ${CYAN}Phase 1: Testing ${#SCAN_LIST[@]} DNS servers with real dnstt connection...${NC}"
-    echo -e "  ${GRAY}(Each test: start dnstt → open SOCKS → test internet → cleanup)${NC}"
+    echo -e "  ${GRAY}(Each test: start dnstt -> open SOCKS -> test internet -> cleanup)${NC}"
     echo ""
 
     for ip in "${SCAN_LIST[@]}"; do
         [ $found -ge $st ] && break
         tested=$((tested + 1))
 
-        # Check duplicate
         local dup=false
         for e in "${DNS_SERVERS[@]}"; do
             [ "$e" = "${ip}:${sp}" ] && { dup=true; break; }
@@ -583,7 +606,7 @@ opt_scan_dns() {
 
         echo -ne "  ${GRAY}[$tested/${#SCAN_LIST[@]}] Testing ${ip}:${sp}...${NC} "
 
-        if real_test_dns "$ip" "$sp" "$sd" "$sport"; then
+        if real_test_dns "$ip" "$sp" "$sd"; then
             found=$((found+1))
             DNS_SERVERS+=("${ip}:${sp}")
             DOMAINS+=("$sd")
@@ -615,7 +638,7 @@ opt_scan_dns() {
 
             echo -ne "  ${GRAY}[R-$extra_tested] Testing ${ip}:${sp}...${NC} "
 
-            if real_test_dns "$ip" "$sp" "$sd" "$sport"; then
+            if real_test_dns "$ip" "$sp" "$sd"; then
                 found=$((found+1))
                 DNS_SERVERS+=("${ip}:${sp}")
                 DOMAINS+=("$sd")
@@ -657,7 +680,6 @@ opt_autoscan() {
     local ac=${AUTO_SCAN_COUNT:-30}
     local ad=${AUTO_SCAN_DOMAIN:-not set}
     local ap=${AUTO_SCAN_PORT:-53}
-    local sp=${SCAN_TEST_PORT:-19999}
 
     echo -e "  ${WHITE}Current:${NC}"
     [ "$as" = "true" ] && echo -e "    Status:    ${GREEN}● ON${NC}" || echo -e "    Status:    ${RED}● OFF${NC}"
@@ -665,14 +687,13 @@ opt_autoscan() {
     echo -e "    Count:     ${CYAN}$ac${NC} DNS to find"
     echo -e "    Domain:    ${CYAN}$ad${NC}"
     echo -e "    DNS Port:  ${CYAN}$ap${NC}"
-    echo -e "    Test Port: ${CYAN}$sp${NC}"
-    echo -e "    ${YELLOW}Note: Uses real dnstt connection test${NC}"
+    echo -e "    Test Port: ${CYAN}auto (free port)${NC}"
+    echo -e "    ${YELLOW}Uses real dnstt connection test${NC}"
     echo ""
     echo -e "    ${CYAN}[1]${NC} Toggle ON/OFF"
     echo -e "    ${CYAN}[2]${NC} Set scan count"
     echo -e "    ${CYAN}[3]${NC} Set domain"
     echo -e "    ${CYAN}[4]${NC} Set DNS port"
-    echo -e "    ${CYAN}[5]${NC} Set test port"
     echo -e "    ${CYAN}[0]${NC} Back"
     echo ""
     echo -ne "  ${WHITE}Select: ${NC}"; read -r ch
@@ -698,9 +719,6 @@ opt_autoscan() {
         4)
             echo -ne "  ${WHITE}DNS Port [$ap]: ${NC}"; read -r np
             [ -n "$np" ] && { AUTO_SCAN_PORT=$np; save_config; echo -e "  ${GREEN}✓ $np${NC}"; } ;;
-        5)
-            echo -ne "  ${WHITE}Test Port [$sp]: ${NC}"; read -r np
-            [ -n "$np" ] && { SCAN_TEST_PORT=$np; save_config; echo -e "  ${GREEN}✓ $np${NC}"; } ;;
         0) return ;;
     esac
     echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
@@ -744,10 +762,10 @@ SVCEOF
 opt_uninstall() {
     show_banner; echo -e "  ${RED}=== Uninstall ===${NC}"
     echo -ne "  Type 'yes': "; read -r c; [ "$c" != "yes" ] && { read -p "  Press Enter..."; return; }
-    full_stop; systemctl disable "$SERVICE_NAME" 2>/dev/null
+    full_stop; systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f /etc/systemd/system/${SERVICE_NAME}.service /usr/local/bin/dnstt-failover /usr/local/bin/winnet-dnstt
     echo -ne "  Remove config? (y/n): "; read -r rc; [ "$rc" = "y" ] && rm -rf /etc/dnstt-DNS-changer
-    systemctl daemon-reload 2>/dev/null; echo -e "  ${GREEN}✓${NC}"; exit 0
+    systemctl daemon-reload 2>/dev/null || true; echo -e "  ${GREEN}✓${NC}"; exit 0
 }
 
 check_root
