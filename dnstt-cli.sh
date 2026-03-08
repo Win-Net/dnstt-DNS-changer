@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v1.9.2
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v2.0.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="1.9.2"
+VERSION="2.0.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -117,13 +117,8 @@ KNOWN_DNS_LIST=(
     "199.249.148.1"
     "169.239.202.202"
     "196.46.173.196"
-    "41.58.188.34"
     "102.134.96.1"
     "197.234.240.1"
-    "41.203.197.12"
-    "154.70.1.1"
-    "105.235.100.100"
-    "41.211.233.9"
     "110.232.176.19"
     "202.46.34.75" "202.46.34.76"
     "202.136.162.11"
@@ -139,7 +134,6 @@ KNOWN_DNS_LIST=(
     "200.115.192.12"
     "200.221.11.100" "200.221.11.101"
     "69.10.33.10" "69.10.44.10"
-    "68.94.156.1" "68.94.157.1"
     "205.152.37.23"
     "205.134.202.146"
     "50.116.23.211"
@@ -147,9 +141,7 @@ KNOWN_DNS_LIST=(
     "96.90.175.167"
     "38.132.106.168"
     "174.138.21.128"
-    "5.1.66.255"
     "82.141.39.32"
-    "50.0.0.1" "50.0.0.2"
     "198.54.117.10" "198.54.117.11"
     "199.5.157.131"
     "208.43.71.1"
@@ -231,21 +223,14 @@ SCAN_SUBNETS=(
     "156.154.70" "156.154.71"
     "223.5.5" "223.6.6"
     "119.29.29" "119.28.28"
-    "176.103.130"
-    "185.222.222"
-    "194.242.2"
-    "101.101.101"
-    "168.95.1" "168.95.192"
-    "114.114.114" "114.114.115"
-    "77.88.8"
-    "195.46.39"
-    "84.200.69" "84.200.70"
-    "185.12.64"
-    "185.43.135"
+    "176.103.130" "185.222.222" "194.242.2"
+    "101.101.101" "168.95.1" "168.95.192"
+    "114.114.114" "114.114.115" "77.88.8"
+    "195.46.39" "84.200.69" "84.200.70"
+    "185.12.64" "185.43.135"
     "103.86.96" "103.86.99"
     "199.85.126" "199.85.127"
-    "129.250.35"
-    "210.130.0" "210.130.1"
+    "129.250.35" "210.130.0" "210.130.1"
     "178.22.122" "185.51.200"
     "78.157.42" "185.55.225" "185.55.226"
     "217.218.155" "217.218.127"
@@ -260,37 +245,8 @@ SCAN_SUBNETS=(
     "94.232.173" "5.200.200"
     "185.37.35" "194.36.174"
     "2.144.4" "10.202.10"
-)
-
-SCAN_TEST_DOMAINS=(
-    "google.com"
-    "cloudflare.com"
-    "microsoft.com"
-    "apple.com"
-    "amazon.com"
-    "facebook.com"
-    "twitter.com"
-    "youtube.com"
-    "instagram.com"
-    "wikipedia.org"
-    "yahoo.com"
-    "linkedin.com"
-    "netflix.com"
-    "reddit.com"
-    "whatsapp.com"
-    "github.com"
-    "stackoverflow.com"
-    "digikala.com"
-    "aparat.com"
-    "varzesh3.com"
-    "namnak.com"
-    "telewebion.com"
-    "shaparak.ir"
-    "tsetmc.com"
-    "bmi.ir"
-    "irancell.ir"
-    "mci.ir"
-    "snapp.ir"
+    "4.2.2" "64.6.64" "64.6.65"
+    "209.244.0" "216.146.35" "216.146.36"
 )
 
 check_root() { [ "$EUID" -ne 0 ] && { echo -e "${RED}Run as root!${NC}"; exit 1; }; }
@@ -327,7 +283,7 @@ show_status_bar() {
     [ "$dc" -gt 0 ] 2>/dev/null && echo -e "  ${WHITE}DNSTT: ${GREEN}$dc process(es)${NC}" || echo -e "  ${WHITE}DNSTT: ${RED}no process${NC}"
     load_config
     local as=${AUTO_SCAN_ENABLED:-false}
-    [ "$as" = "true" ] && echo -e "  ${WHITE}Auto-Scan: ${GREEN}● ON${NC} (${AUTO_SCAN_COUNT:-30} DNS, trigger at ${AUTO_SCAN_TRIGGER:-2} left)" || echo -e "  ${WHITE}Auto-Scan: ${RED}● OFF${NC}"
+    [ "$as" = "true" ] && echo -e "  ${WHITE}Auto-Scan: ${GREEN}● ON${NC} (${AUTO_SCAN_COUNT:-30} DNS)" || echo -e "  ${WHITE}Auto-Scan: ${RED}● OFF${NC}"
     echo -e "  ${GRAY}─────────────────────────────────────────────────────${NC}"
     echo ""
 }
@@ -346,7 +302,7 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Config"
     echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Servers"
     echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Remove DNS Server"
-    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS"
+    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS (Real Test)"
     echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Auto-Scan Settings"
     echo -e "  ${CYAN}[${WHITE}14${CYAN}]${NC}  Update Script"
     echo -e "  ${CYAN}[${WHITE}15${CYAN}]${NC}  Uninstall"
@@ -358,7 +314,7 @@ show_menu() {
 
 save_config() {
     cat > "$CONFIG_FILE" << EOF
-# DNSTT-DNS-Changer Config v1.9.2 - $(date)
+# DNSTT-DNS-Changer Config v2.0.0 - $(date)
 DNS_SERVERS=(
 $(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
 )
@@ -382,6 +338,7 @@ AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
 AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN:-}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
+SCAN_TEST_PORT=${SCAN_TEST_PORT:-19999}
 EOF
 }
 
@@ -396,19 +353,71 @@ shuffle_array() {
     done
 }
 
-test_dns_server() {
-    local ip="$1"
-    local test_domain="${SCAN_TEST_DOMAINS[$((RANDOM % ${#SCAN_TEST_DOMAINS[@]}))]}"
-    local test_domain2="${SCAN_TEST_DOMAINS[$((RANDOM % ${#SCAN_TEST_DOMAINS[@]}))]}"
+kill_scan_dnstt() {
+    local pid="$1"
+    local sport="$2"
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    if command -v fuser &>/dev/null; then
+        fuser -k ${sport}/tcp 2>/dev/null
+    fi
+    local i=0
+    while ss -tlnp 2>/dev/null | grep -q ":${sport}" && [ $i -lt 5 ]; do
+        sleep 1; i=$((i+1))
+    done
+}
 
-    local r
-    r=$(timeout 5 dig @"$ip" "$test_domain" A +short +time=3 +tries=1 2>/dev/null)
-    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-        local r2
-        r2=$(timeout 5 dig @"$ip" "$test_domain2" A +short +time=3 +tries=1 2>/dev/null)
-        if [ -n "$r2" ] && echo "$r2" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-            return 0
-        fi
+real_test_dns() {
+    local ip="$1"
+    local dns_port="$2"
+    local domain="$3"
+    local sport="${4:-19999}"
+    local test_listen="127.0.0.1:${sport}"
+    local binary="${BINARY:-/root/dnstt-client-linux-amd64}"
+    local pubkey="${PUBKEY_FILE:-/root/pub.key}"
+    local proto="${PROTOCOL:-udp}"
+
+    # Kill any leftover scan process on this port
+    local old_pids=$(pgrep -f "dnstt-client.*${sport}" 2>/dev/null)
+    for op in $old_pids; do kill -9 "$op" 2>/dev/null; done
+    if command -v fuser &>/dev/null; then
+        fuser -k ${sport}/tcp 2>/dev/null
+    fi
+    sleep 1
+
+    # Start dnstt with this DNS
+    local scan_pid
+    if [ "$proto" = "dot" ]; then
+        $binary -dot "${ip}:${dns_port}" -pubkey-file "$pubkey" "$domain" "$test_listen" &
+    else
+        $binary -udp "${ip}:${dns_port}" -pubkey-file "$pubkey" "$domain" "$test_listen" &
+    fi
+    scan_pid=$!
+    sleep 5
+
+    # Check process alive
+    if ! kill -0 $scan_pid 2>/dev/null; then
+        return 1
+    fi
+
+    # Check port open
+    if ! ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
+        kill_scan_dnstt "$scan_pid" "$sport"
+        return 1
+    fi
+
+    # Real SOCKS test
+    local ok=false
+    if timeout 15 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+        ok=true
+    elif timeout 15 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+        ok=true
+    fi
+
+    kill_scan_dnstt "$scan_pid" "$sport"
+
+    if [ "$ok" = true ]; then
+        return 0
     fi
     return 1
 }
@@ -521,30 +530,45 @@ opt_remove_dns() {
     read -p "  Press Enter..."
 }
 
-# Manual scan
+# Manual scan with REAL connection test
 opt_scan_dns() {
-    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner ===${NC}"; echo ""
-    if ! command -v dig &>/dev/null; then
-        echo -e "  ${YELLOW}Installing dig...${NC}"
-        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null
-        command -v dig &>/dev/null || { echo -e "  ${RED}Failed to install dig!${NC}"; read -p "  Press Enter..."; return; }
-    fi
-    echo -ne "  ${WHITE}How many DNS to find? [30]: ${NC}"; read -r st; st=${st:-30}
-    echo -ne "  ${WHITE}Domain: ${NC}"; read -r sd; [ -z "$sd" ] && { echo -e "  ${RED}Required!${NC}"; read -p "  Press Enter..."; return; }
-    echo -ne "  ${WHITE}Port [53]: ${NC}"; read -r sp; sp=${sp:-53}
+    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner (Real Connection Test) ===${NC}"; echo ""
+
+    [ ! -f "/root/dnstt-client-linux-amd64" ] && { echo -e "  ${RED}Missing dnstt-client!${NC}"; read -p "  Press Enter..."; return; }
+    [ ! -f "/root/pub.key" ] && { echo -e "  ${RED}Missing pub.key!${NC}"; read -p "  Press Enter..."; return; }
+
+    echo -ne "  ${WHITE}How many DNS to find? [10]: ${NC}"; read -r st; st=${st:-10}
+    echo -ne "  ${WHITE}Domain (your dnstt domain): ${NC}"; read -r sd; [ -z "$sd" ] && { echo -e "  ${RED}Required!${NC}"; read -p "  Press Enter..."; return; }
+    echo -ne "  ${WHITE}DNS Port [53]: ${NC}"; read -r sp; sp=${sp:-53}
     echo -ne "  ${WHITE}Replace or add? (replace/add) [add]: ${NC}"; read -r sm; sm=${sm:-add}
-    echo ""; echo -e "  ${YELLOW}Scanning for $st DNS servers...${NC}"; echo ""
 
     load_config
+    local sport=${SCAN_TEST_PORT:-19999}
+
+    echo ""
+    echo -e "  ${YELLOW}⚠ Service will be stopped during scan${NC}"
+    echo -e "  ${YELLOW}⚠ Each DNS takes ~20s to test (real dnstt connection)${NC}"
+    echo -e "  ${YELLOW}⚠ Estimated time: ~$((${#KNOWN_DNS_LIST[@]} * 20 / 60)) minutes for full scan${NC}"
+    echo -ne "  ${WHITE}Continue? (y/n): ${NC}"; read -r cont
+    [ "$cont" != "y" ] && { read -p "  Press Enter..."; return; }
+
+    echo ""
+    echo -e "  ${YELLOW}Stopping service...${NC}"
+    full_stop
+    sleep 2
+
     [ "$sm" = "replace" ] && { DNS_SERVERS=(); DOMAINS=(); }
 
-    local found=0 tested=0 start=$(date +%s)
+    local found=0 tested=0 failed=0 start=$(date +%s)
 
-    # Phase 1: Known DNS list (shuffled)
+    # Phase 1: Known DNS
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
     shuffle_array SCAN_LIST
 
-    echo -e "  ${CYAN}Phase 1: Testing ${#SCAN_LIST[@]} known DNS servers...${NC}"; echo ""
+    echo ""
+    echo -e "  ${CYAN}Phase 1: Testing ${#SCAN_LIST[@]} DNS servers with real dnstt connection...${NC}"
+    echo -e "  ${GRAY}(Each test: start dnstt → open SOCKS → test internet → cleanup)${NC}"
+    echo ""
 
     for ip in "${SCAN_LIST[@]}"; do
         [ $found -ge $st ] && break
@@ -557,23 +581,27 @@ opt_scan_dns() {
         done
         [ "$dup" = true ] && continue
 
-        if test_dns_server "$ip"; then
+        echo -ne "  ${GRAY}[$tested/${#SCAN_LIST[@]}] Testing ${ip}:${sp}...${NC} "
+
+        if real_test_dns "$ip" "$sp" "$sd" "$sport"; then
             found=$((found+1))
             DNS_SERVERS+=("${ip}:${sp}")
             DOMAINS+=("$sd")
-            echo -e "  ${GREEN}[$found/$st]${NC} ${ip}:${sp} ${GRAY}(tested: $tested)${NC}"
+            echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
+        else
+            failed=$((failed+1))
+            echo -e "${RED}✗${NC}"
         fi
-
-        [ $((tested % 50)) -eq 0 ] && [ $found -lt $st ] && echo -e "  ${GRAY}... $tested tested, $found found${NC}"
     done
 
-    # Phase 2: Random scan on known subnets
+    # Phase 2: Random subnets
     if [ $found -lt $st ]; then
         echo ""
-        echo -e "  ${CYAN}Phase 2: Random scanning known subnets (need $((st - found)) more)...${NC}"; echo ""
+        echo -e "  ${CYAN}Phase 2: Random scanning known subnets (need $((st - found)) more)...${NC}"
+        echo ""
 
         local extra_tested=0
-        while [ $found -lt $st ] && [ $extra_tested -lt 2000 ]; do
+        while [ $found -lt $st ] && [ $extra_tested -lt 200 ]; do
             local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
             local ip="${subnet}.$((RANDOM % 254 + 1))"
             extra_tested=$((extra_tested + 1))
@@ -585,25 +613,40 @@ opt_scan_dns() {
             done
             [ "$dup" = true ] && continue
 
-            if test_dns_server "$ip"; then
+            echo -ne "  ${GRAY}[R-$extra_tested] Testing ${ip}:${sp}...${NC} "
+
+            if real_test_dns "$ip" "$sp" "$sd" "$sport"; then
                 found=$((found+1))
                 DNS_SERVERS+=("${ip}:${sp}")
                 DOMAINS+=("$sd")
-                echo -e "  ${GREEN}[$found/$st]${NC} ${ip}:${sp} ${GRAY}(tested: $tested, random)${NC}"
+                echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
+            else
+                failed=$((failed+1))
+                echo -e "${RED}✗${NC}"
             fi
-
-            [ $((extra_tested % 100)) -eq 0 ] && [ $found -lt $st ] && echo -e "  ${GRAY}... $tested tested, $found found${NC}"
         done
     fi
 
-    echo ""; echo -e "  ${WHITE}Found: ${GREEN}$found${NC} | Tested: $tested | Time: $(( $(date +%s) - start ))s | Total: ${#DNS_SERVERS[@]}${NC}"
+    local elapsed=$(( $(date +%s) - start ))
+    echo ""
+    echo -e "  ${WHITE}════════════════════════════════════════${NC}"
+    echo -e "  ${WHITE}Found:  ${GREEN}$found${NC} verified DNS servers"
+    echo -e "  ${WHITE}Failed: ${RED}$failed${NC}"
+    echo -e "  ${WHITE}Tested: ${CYAN}$tested${NC}"
+    echo -e "  ${WHITE}Time:   ${CYAN}${elapsed}s${NC}"
+    echo -e "  ${WHITE}Total:  ${CYAN}${#DNS_SERVERS[@]}${NC} DNS in config"
+    echo -e "  ${WHITE}════════════════════════════════════════${NC}"
+
     if [ $found -gt 0 ]; then
         echo -ne "  ${WHITE}Save? (y/n): ${NC}"; read -r sv
         if [ "$sv" = "y" ]; then
             save_config; echo -e "  ${GREEN}✓ Saved${NC}"
-            echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r; [ "$r" = "y" ] && { full_stop; full_start; echo -e "  ${GREEN}✓${NC}"; }
         fi
-    fi; read -p "  Press Enter..."
+    fi
+
+    echo -ne "  ${YELLOW}Start service? (y/n): ${NC}"; read -r r
+    [ "$r" = "y" ] && { full_start; echo -e "  ${GREEN}✓ Service started${NC}"; }
+    read -p "  Press Enter..."
 }
 
 # Auto-scan settings
@@ -611,22 +654,25 @@ opt_autoscan() {
     show_banner; echo -e "  ${WHITE}${BOLD}=== Auto-Scan Settings ===${NC}"; echo ""
     load_config
     local as=${AUTO_SCAN_ENABLED:-false}
-    local at=${AUTO_SCAN_TRIGGER:-2}
     local ac=${AUTO_SCAN_COUNT:-30}
     local ad=${AUTO_SCAN_DOMAIN:-not set}
     local ap=${AUTO_SCAN_PORT:-53}
+    local sp=${SCAN_TEST_PORT:-19999}
 
     echo -e "  ${WHITE}Current:${NC}"
-    [ "$as" = "true" ] && echo -e "    Status:  ${GREEN}● ON${NC}" || echo -e "    Status:  ${RED}● OFF${NC}"
-    echo -e "    Trigger: when all DNS fail, auto-scan new ones"
-    echo -e "    Count:   ${CYAN}$ac${NC} DNS to find"
-    echo -e "    Domain:  ${CYAN}$ad${NC}"
-    echo -e "    Port:    ${CYAN}$ap${NC}"
+    [ "$as" = "true" ] && echo -e "    Status:    ${GREEN}● ON${NC}" || echo -e "    Status:    ${RED}● OFF${NC}"
+    echo -e "    Trigger:   when all DNS fail"
+    echo -e "    Count:     ${CYAN}$ac${NC} DNS to find"
+    echo -e "    Domain:    ${CYAN}$ad${NC}"
+    echo -e "    DNS Port:  ${CYAN}$ap${NC}"
+    echo -e "    Test Port: ${CYAN}$sp${NC}"
+    echo -e "    ${YELLOW}Note: Uses real dnstt connection test${NC}"
     echo ""
     echo -e "    ${CYAN}[1]${NC} Toggle ON/OFF"
     echo -e "    ${CYAN}[2]${NC} Set scan count"
     echo -e "    ${CYAN}[3]${NC} Set domain"
-    echo -e "    ${CYAN}[4]${NC} Set port"
+    echo -e "    ${CYAN}[4]${NC} Set DNS port"
+    echo -e "    ${CYAN}[5]${NC} Set test port"
     echo -e "    ${CYAN}[0]${NC} Back"
     echo ""
     echo -ne "  ${WHITE}Select: ${NC}"; read -r ch
@@ -650,8 +696,11 @@ opt_autoscan() {
             echo -ne "  ${WHITE}Domain: ${NC}"; read -r nd
             [ -n "$nd" ] && { AUTO_SCAN_DOMAIN="$nd"; save_config; echo -e "  ${GREEN}✓ $nd${NC}"; } ;;
         4)
-            echo -ne "  ${WHITE}Port [$ap]: ${NC}"; read -r np
+            echo -ne "  ${WHITE}DNS Port [$ap]: ${NC}"; read -r np
             [ -n "$np" ] && { AUTO_SCAN_PORT=$np; save_config; echo -e "  ${GREEN}✓ $np${NC}"; } ;;
+        5)
+            echo -ne "  ${WHITE}Test Port [$sp]: ${NC}"; read -r np
+            [ -n "$np" ] && { SCAN_TEST_PORT=$np; save_config; echo -e "  ${GREEN}✓ $np${NC}"; } ;;
         0) return ;;
     esac
     echo -ne "  ${YELLOW}Restart? (y/n): ${NC}"; read -r r
