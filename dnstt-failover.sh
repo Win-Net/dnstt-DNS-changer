@@ -24,7 +24,6 @@ CHECK=${AUTO_RESTART_CHECK:-15}
 FAILS=0
 MAX_FAIL=${MAX_FAILURES:-2}
 PORT="${LOCAL_LISTEN##*:}"
-SCAN_PORT="${SCAN_TEST_PORT:-19999}"
 
 KNOWN_DNS_LIST=(
     "1.1.1.1" "1.0.0.1" "1.1.1.2" "1.0.0.2" "1.1.1.3" "1.0.0.3"
@@ -267,11 +266,22 @@ log() {
     logger -t "$TAG" "$1: $2" 2>/dev/null
 }
 
+find_free_port() {
+    local port
+    for port in $(shuf -i 19000-19500 -n 50 2>/dev/null || seq 19000 19050); do
+        if ! ss -tlnp 2>/dev/null | grep -q ":${port}"; then
+            echo "$port"
+            return 0
+        fi
+    done
+    echo "19999"
+}
+
 nuke() {
-    pkill -9 -f "dnstt-client" 2>/dev/null
+    pkill -9 -f "dnstt-client" 2>/dev/null || true
     sleep 1
     if command -v fuser &>/dev/null; then
-        fuser -k ${PORT}/tcp 2>/dev/null
+        fuser -k ${PORT}/tcp 2>/dev/null || true
     fi
     sleep 1
     local i=0
@@ -283,13 +293,14 @@ nuke() {
 
 kill_scan_dnstt() {
     local pid="$1"
-    kill -9 "$pid" 2>/dev/null
-    wait "$pid" 2>/dev/null
+    local sport="$2"
+    kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
     if command -v fuser &>/dev/null; then
-        fuser -k ${SCAN_PORT}/tcp 2>/dev/null
+        fuser -k ${sport}/tcp 2>/dev/null || true
     fi
     local i=0
-    while ss -tlnp 2>/dev/null | grep -q ":${SCAN_PORT}" && [ $i -lt 5 ]; do
+    while ss -tlnp 2>/dev/null | grep -q ":${sport}" && [ $i -lt 5 ]; do
         sleep 1; i=$((i+1))
     done
 }
@@ -365,17 +376,20 @@ real_test_dns() {
     local ip="$1"
     local dns_port="$2"
     local domain="$3"
-    local test_listen="127.0.0.1:${SCAN_PORT}"
+    local sport
+    sport=$(find_free_port)
+    local test_listen="127.0.0.1:${sport}"
 
-    # Kill any leftover scan process
-    local old_pids=$(pgrep -f "dnstt-client.*${SCAN_PORT}" 2>/dev/null)
-    for op in $old_pids; do kill -9 "$op" 2>/dev/null; done
+    # Kill any leftover on this port
+    local old_pids
+    old_pids=$(pgrep -f "dnstt-client.*${sport}" 2>/dev/null) || true
+    for op in $old_pids; do kill -9 "$op" 2>/dev/null || true; done
     if command -v fuser &>/dev/null; then
-        fuser -k ${SCAN_PORT}/tcp 2>/dev/null
+        fuser -k ${sport}/tcp 2>/dev/null || true
     fi
     sleep 1
 
-    # Start dnstt with this DNS on scan port
+    # Start dnstt with this DNS
     local scan_pid
     if [ "${PROTOCOL:-udp}" = "dot" ]; then
         $BINARY -dot "${ip}:${dns_port}" -pubkey-file "$PUBKEY_FILE" "$domain" "$test_listen" &
@@ -385,14 +399,14 @@ real_test_dns() {
     scan_pid=$!
     sleep 5
 
-    # Check if process alive
+    # Check process alive
     if ! kill -0 $scan_pid 2>/dev/null; then
         return 1
     fi
 
-    # Check if port open
-    if ! ss -tlnp 2>/dev/null | grep -q ":${SCAN_PORT}"; then
-        kill_scan_dnstt "$scan_pid"
+    # Check port open
+    if ! ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
+        kill_scan_dnstt "$scan_pid" "$sport"
         return 1
     fi
 
@@ -404,7 +418,7 @@ real_test_dns() {
         ok=true
     fi
 
-    kill_scan_dnstt "$scan_pid"
+    kill_scan_dnstt "$scan_pid" "$sport"
 
     if [ "$ok" = true ]; then
         return 0
@@ -438,7 +452,7 @@ AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
 AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
-SCAN_TEST_PORT=${SCAN_TEST_PORT:-19999}
+SCAN_TEST_PORT=0
 SCANEOF
 }
 
@@ -455,7 +469,6 @@ auto_scan() {
 
     log "INFO" "AUTO-SCAN: Starting real connection test for $scan_count DNS servers"
 
-    # Stop main dnstt first to free resources
     nuke
 
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
@@ -466,14 +479,14 @@ auto_scan() {
     local found=0
     local tested=0
 
-    # Phase 1: Known DNS list
+    # Phase 1: Known DNS
     log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS (real connection)"
 
     for ip in "${SCAN_LIST[@]}"; do
         [ $found -ge $scan_count ] && break
         tested=$((tested + 1))
 
-        if [ $((tested % 20)) -eq 0 ]; then
+        if [ $((tested % 10)) -eq 0 ]; then
             log "INFO" "AUTO-SCAN: Progress: tested=$tested found=$found"
         fi
 
@@ -488,8 +501,6 @@ auto_scan() {
             new_dns+=("${ip}:${scan_port}")
             new_domains+=("$scan_domain")
             log "INFO" "AUTO-SCAN: [$found/$scan_count] VERIFIED ${ip}:${scan_port}"
-        else
-            log "INFO" "AUTO-SCAN: FAILED ${ip}:${scan_port}"
         fi
     done
 
@@ -498,7 +509,7 @@ auto_scan() {
         log "INFO" "AUTO-SCAN: Phase 2 - Random scanning (need $((scan_count - found)) more)"
 
         local extra_tested=0
-        while [ $found -lt $scan_count ] && [ $extra_tested -lt 500 ]; do
+        while [ $found -lt $scan_count ] && [ $extra_tested -lt 200 ]; do
             local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
             local ip="${subnet}.$((RANDOM % 254 + 1))"
             extra_tested=$((extra_tested + 1))
@@ -579,7 +590,6 @@ try_all_servers() {
     log "ERROR" "Waiting ${ALL_FAILED_WAIT:-30}s then retry from beginning..."
     sleep "${ALL_FAILED_WAIT:-30}"
 
-    # Reload config and retry from IDX=0
     source "$CONFIG_FILE" 2>/dev/null
     TOTAL=${#DNS_SERVERS[@]}
     IDX=0
@@ -593,7 +603,7 @@ trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 log "INFO" "v2.0.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
-    apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null
+    apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null || true
 fi
 
 start_dnstt
