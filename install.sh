@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer Installer / Updater v1.9.0
+# DNSTT-DNS-Changer Installer / Updater v1.9.1
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
 set -e
-VERSION="1.9.0"
+VERSION="1.9.1"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
 SERVICE="dnstt-DNS-changer"
@@ -63,6 +63,21 @@ SendSIGKILL=yes
 WantedBy=multi-user.target
 SVCEOF
     systemctl daemon-reload
+
+    # Add auto-scan fields to existing config if missing
+    if [ -f "$INSTALL_DIR/config.conf" ]; then
+        if ! grep -q "AUTO_SCAN_ENABLED" "$INSTALL_DIR/config.conf" 2>/dev/null; then
+            echo "" >> "$INSTALL_DIR/config.conf"
+            echo "# ─── Auto Scan (added by updater) ───" >> "$INSTALL_DIR/config.conf"
+            echo 'AUTO_SCAN_ENABLED=false' >> "$INSTALL_DIR/config.conf"
+            echo 'AUTO_SCAN_TRIGGER=2' >> "$INSTALL_DIR/config.conf"
+            echo 'AUTO_SCAN_COUNT=30' >> "$INSTALL_DIR/config.conf"
+            echo 'AUTO_SCAN_DOMAIN=""' >> "$INSTALL_DIR/config.conf"
+            echo 'AUTO_SCAN_PORT=53' >> "$INSTALL_DIR/config.conf"
+            echo -e "  ${GREEN}✓ Auto-scan config added${NC}"
+        fi
+    fi
+
     echo -e "  ${GREEN}✓${NC}"
 
     echo -e "${WHITE}[3/3] Starting...${NC}"
@@ -136,7 +151,7 @@ if [ ${#DNS_L[@]} -gt 0 ]; then
     source "$INSTALL_DIR/config.conf" 2>/dev/null
 
     cat > "$INSTALL_DIR/config.conf" << CONFEOF
-# DNSTT-DNS-Changer Configuration v1.9.0
+# DNSTT-DNS-Changer Configuration v1.9.1
 # Generated: $(date)
 
 DNS_SERVERS=(
@@ -159,6 +174,11 @@ AUTO_RESTART_MAX_TRIES=${AUTO_RESTART_MAX_TRIES:-3}
 SOCKS_TEST_ENABLED=${SOCKS_TEST_ENABLED:-false}
 SOCKS_TEST_URL="${SOCKS_TEST_URL:-http://www.google.com}"
 SOCKS_TEST_TIMEOUT=${SOCKS_TEST_TIMEOUT:-15}
+AUTO_SCAN_ENABLED=${AUTO_SCAN_ENABLED:-false}
+AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
+AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
+AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN:-}"
+AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
 CONFEOF
     echo -e "  ${GREEN}✓ Config customized (port: $sp)${NC}"
 else
