@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v1.9.2 - With Auto-Scan (Iran Compatible)
+# DNSTT-DNS-Changer v2.0.0 - Real Connection Test Scanner
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
@@ -24,6 +24,7 @@ CHECK=${AUTO_RESTART_CHECK:-15}
 FAILS=0
 MAX_FAIL=${MAX_FAILURES:-2}
 PORT="${LOCAL_LISTEN##*:}"
+SCAN_PORT="${SCAN_TEST_PORT:-19999}"
 
 KNOWN_DNS_LIST=(
     "1.1.1.1" "1.0.0.1" "1.1.1.2" "1.0.0.2" "1.1.1.3" "1.0.0.3"
@@ -129,13 +130,8 @@ KNOWN_DNS_LIST=(
     "199.249.148.1"
     "169.239.202.202"
     "196.46.173.196"
-    "41.58.188.34"
     "102.134.96.1"
     "197.234.240.1"
-    "41.203.197.12"
-    "154.70.1.1"
-    "105.235.100.100"
-    "41.211.233.9"
     "110.232.176.19"
     "202.46.34.75" "202.46.34.76"
     "202.136.162.11"
@@ -151,7 +147,6 @@ KNOWN_DNS_LIST=(
     "200.115.192.12"
     "200.221.11.100" "200.221.11.101"
     "69.10.33.10" "69.10.44.10"
-    "68.94.156.1" "68.94.157.1"
     "205.152.37.23"
     "205.134.202.146"
     "50.116.23.211"
@@ -159,9 +154,7 @@ KNOWN_DNS_LIST=(
     "96.90.175.167"
     "38.132.106.168"
     "174.138.21.128"
-    "5.1.66.255"
     "82.141.39.32"
-    "50.0.0.1" "50.0.0.2"
     "198.54.117.10" "198.54.117.11"
     "199.5.157.131"
     "208.43.71.1"
@@ -243,21 +236,14 @@ SCAN_SUBNETS=(
     "156.154.70" "156.154.71"
     "223.5.5" "223.6.6"
     "119.29.29" "119.28.28"
-    "176.103.130"
-    "185.222.222"
-    "194.242.2"
-    "101.101.101"
-    "168.95.1" "168.95.192"
-    "114.114.114" "114.114.115"
-    "77.88.8"
-    "195.46.39"
-    "84.200.69" "84.200.70"
-    "185.12.64"
-    "185.43.135"
+    "176.103.130" "185.222.222" "194.242.2"
+    "101.101.101" "168.95.1" "168.95.192"
+    "114.114.114" "114.114.115" "77.88.8"
+    "195.46.39" "84.200.69" "84.200.70"
+    "185.12.64" "185.43.135"
     "103.86.96" "103.86.99"
     "199.85.126" "199.85.127"
-    "129.250.35"
-    "210.130.0" "210.130.1"
+    "129.250.35" "210.130.0" "210.130.1"
     "178.22.122" "185.51.200"
     "78.157.42" "185.55.225" "185.55.226"
     "217.218.155" "217.218.127"
@@ -272,37 +258,8 @@ SCAN_SUBNETS=(
     "94.232.173" "5.200.200"
     "185.37.35" "194.36.174"
     "2.144.4" "10.202.10"
-)
-
-SCAN_TEST_DOMAINS=(
-    "google.com"
-    "cloudflare.com"
-    "microsoft.com"
-    "apple.com"
-    "amazon.com"
-    "facebook.com"
-    "twitter.com"
-    "youtube.com"
-    "instagram.com"
-    "wikipedia.org"
-    "yahoo.com"
-    "linkedin.com"
-    "netflix.com"
-    "reddit.com"
-    "whatsapp.com"
-    "github.com"
-    "stackoverflow.com"
-    "digikala.com"
-    "aparat.com"
-    "varzesh3.com"
-    "namnak.com"
-    "telewebion.com"
-    "shaparak.ir"
-    "tsetmc.com"
-    "bmi.ir"
-    "irancell.ir"
-    "mci.ir"
-    "snapp.ir"
+    "4.2.2" "64.6.64" "64.6.65"
+    "209.244.0" "216.146.35" "216.146.36"
 )
 
 log() {
@@ -322,6 +279,19 @@ nuke() {
         sleep 1; i=$((i+1))
     done
     DNSTT_PID=0
+}
+
+kill_scan_dnstt() {
+    local pid="$1"
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    if command -v fuser &>/dev/null; then
+        fuser -k ${SCAN_PORT}/tcp 2>/dev/null
+    fi
+    local i=0
+    while ss -tlnp 2>/dev/null | grep -q ":${SCAN_PORT}" && [ $i -lt 5 ]; do
+        sleep 1; i=$((i+1))
+    done
 }
 
 start_dnstt() {
@@ -391,19 +361,53 @@ shuffle_array() {
     done
 }
 
-test_dns_server() {
+real_test_dns() {
     local ip="$1"
-    local test_domain="${SCAN_TEST_DOMAINS[$((RANDOM % ${#SCAN_TEST_DOMAINS[@]}))]}"
-    local test_domain2="${SCAN_TEST_DOMAINS[$((RANDOM % ${#SCAN_TEST_DOMAINS[@]}))]}"
+    local dns_port="$2"
+    local domain="$3"
+    local test_listen="127.0.0.1:${SCAN_PORT}"
 
-    local r
-    r=$(timeout 5 dig @"$ip" "$test_domain" A +short +time=3 +tries=1 2>/dev/null)
-    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-        local r2
-        r2=$(timeout 5 dig @"$ip" "$test_domain2" A +short +time=3 +tries=1 2>/dev/null)
-        if [ -n "$r2" ] && echo "$r2" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-            return 0
-        fi
+    # Kill any leftover scan process
+    local old_pids=$(pgrep -f "dnstt-client.*${SCAN_PORT}" 2>/dev/null)
+    for op in $old_pids; do kill -9 "$op" 2>/dev/null; done
+    if command -v fuser &>/dev/null; then
+        fuser -k ${SCAN_PORT}/tcp 2>/dev/null
+    fi
+    sleep 1
+
+    # Start dnstt with this DNS on scan port
+    local scan_pid
+    if [ "${PROTOCOL:-udp}" = "dot" ]; then
+        $BINARY -dot "${ip}:${dns_port}" -pubkey-file "$PUBKEY_FILE" "$domain" "$test_listen" &
+    else
+        $BINARY -udp "${ip}:${dns_port}" -pubkey-file "$PUBKEY_FILE" "$domain" "$test_listen" &
+    fi
+    scan_pid=$!
+    sleep 5
+
+    # Check if process alive
+    if ! kill -0 $scan_pid 2>/dev/null; then
+        return 1
+    fi
+
+    # Check if port open
+    if ! ss -tlnp 2>/dev/null | grep -q ":${SCAN_PORT}"; then
+        kill_scan_dnstt "$scan_pid"
+        return 1
+    fi
+
+    # Real SOCKS test
+    local ok=false
+    if timeout 15 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+        ok=true
+    elif timeout 15 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+        ok=true
+    fi
+
+    kill_scan_dnstt "$scan_pid"
+
+    if [ "$ok" = true ]; then
+        return 0
     fi
     return 1
 }
@@ -434,6 +438,7 @@ AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
 AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
+SCAN_TEST_PORT=${SCAN_TEST_PORT:-19999}
 SCANEOF
 }
 
@@ -448,16 +453,10 @@ auto_scan() {
 
     [ -z "$scan_domain" ] && return
 
-    if ! command -v dig &>/dev/null; then
-        log "WARNING" "dig not installed, installing..."
-        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null
-        if ! command -v dig &>/dev/null; then
-            log "ERROR" "Cannot install dig, aborting scan"
-            return
-        fi
-    fi
+    log "INFO" "AUTO-SCAN: Starting real connection test for $scan_count DNS servers"
 
-    log "INFO" "AUTO-SCAN: Starting scan for $scan_count DNS servers"
+    # Stop main dnstt first to free resources
+    nuke
 
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
     shuffle_array SCAN_LIST
@@ -467,14 +466,14 @@ auto_scan() {
     local found=0
     local tested=0
 
-    # Phase 1: Test known DNS servers
-    log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS servers"
+    # Phase 1: Known DNS list
+    log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS (real connection)"
 
     for ip in "${SCAN_LIST[@]}"; do
         [ $found -ge $scan_count ] && break
         tested=$((tested + 1))
 
-        if [ $((tested % 50)) -eq 0 ]; then
+        if [ $((tested % 20)) -eq 0 ]; then
             log "INFO" "AUTO-SCAN: Progress: tested=$tested found=$found"
         fi
 
@@ -484,23 +483,26 @@ auto_scan() {
         done
         [ "$dup" = true ] && continue
 
-        if test_dns_server "$ip"; then
+        if real_test_dns "$ip" "$scan_port" "$scan_domain"; then
             found=$((found + 1))
             new_dns+=("${ip}:${scan_port}")
             new_domains+=("$scan_domain")
-            log "INFO" "AUTO-SCAN: [$found/$scan_count] Found ${ip}:${scan_port}"
+            log "INFO" "AUTO-SCAN: [$found/$scan_count] VERIFIED ${ip}:${scan_port}"
+        else
+            log "INFO" "AUTO-SCAN: FAILED ${ip}:${scan_port}"
         fi
     done
 
-    # Phase 2: Random scan on known DNS subnets
+    # Phase 2: Random subnets
     if [ $found -lt $scan_count ]; then
         log "INFO" "AUTO-SCAN: Phase 2 - Random scanning (need $((scan_count - found)) more)"
 
         local extra_tested=0
-        while [ $found -lt $scan_count ] && [ $extra_tested -lt 2000 ]; do
+        while [ $found -lt $scan_count ] && [ $extra_tested -lt 500 ]; do
             local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
             local ip="${subnet}.$((RANDOM % 254 + 1))"
             extra_tested=$((extra_tested + 1))
+            tested=$((tested + 1))
 
             local dup=false
             for e in "${new_dns[@]}"; do
@@ -508,11 +510,11 @@ auto_scan() {
             done
             [ "$dup" = true ] && continue
 
-            if test_dns_server "$ip"; then
+            if real_test_dns "$ip" "$scan_port" "$scan_domain"; then
                 found=$((found + 1))
                 new_dns+=("${ip}:${scan_port}")
                 new_domains+=("$scan_domain")
-                log "INFO" "AUTO-SCAN: [$found/$scan_count] Found ${ip}:${scan_port} (random)"
+                log "INFO" "AUTO-SCAN: [$found/$scan_count] VERIFIED ${ip}:${scan_port} (random)"
             fi
         done
     fi
@@ -523,9 +525,9 @@ auto_scan() {
         TOTAL=${#DNS_SERVERS[@]}
         IDX=0
         save_config_file
-        log "INFO" "AUTO-SCAN: Complete! Found $found DNS servers, config updated"
+        log "INFO" "AUTO-SCAN: Complete! Found $found VERIFIED DNS servers"
     else
-        log "ERROR" "AUTO-SCAN: No DNS found after $tested tests"
+        log "ERROR" "AUTO-SCAN: No working DNS found after $tested tests"
     fi
 }
 
@@ -557,17 +559,9 @@ try_all_servers() {
             log "INFO" "Trying newly scanned servers..."
             IDX=0
             TOTAL=${#DNS_SERVERS[@]}
-            if start_dnstt; then
-                sleep 10
-                if is_alive; then
-                    log "INFO" "Connected on new DNS ${DNS_SERVERS[$IDX]}"
-                    FAILS=0
-                    return 0
-                fi
-            fi
+
             local t2=0
             while [ $t2 -lt $TOTAL ]; do
-                next_dns
                 if start_dnstt; then
                     sleep 10
                     if is_alive; then
@@ -576,13 +570,19 @@ try_all_servers() {
                         return 0
                     fi
                 fi
+                next_dns
                 t2=$((t2 + 1))
             done
         fi
     fi
 
-    log "ERROR" "Waiting ${ALL_FAILED_WAIT:-30}s..."
+    log "ERROR" "Waiting ${ALL_FAILED_WAIT:-30}s then retry from beginning..."
     sleep "${ALL_FAILED_WAIT:-30}"
+
+    # Reload config and retry from IDX=0
+    source "$CONFIG_FILE" 2>/dev/null
+    TOTAL=${#DNS_SERVERS[@]}
+    IDX=0
     FAILS=0
     return 1
 }
@@ -590,7 +590,7 @@ try_all_servers() {
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # MAIN
-log "INFO" "v1.9.2 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+log "INFO" "v2.0.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
     apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null
