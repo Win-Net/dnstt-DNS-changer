@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v1.9.0 - With Auto-Scan
+# DNSTT-DNS-Changer v1.9.1 - With Auto-Scan (Fixed)
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
@@ -24,6 +24,191 @@ CHECK=${AUTO_RESTART_CHECK:-15}
 FAILS=0
 MAX_FAIL=${MAX_FAILURES:-2}
 PORT="${LOCAL_LISTEN##*:}"
+
+KNOWN_DNS_LIST=(
+    "1.1.1.1" "1.0.0.1" "1.1.1.2" "1.0.0.2" "1.1.1.3" "1.0.0.3"
+    "8.8.8.8" "8.8.4.4"
+    "9.9.9.9" "9.9.9.10" "9.9.9.11" "9.9.9.12"
+    "149.112.112.112" "149.112.112.11" "149.112.112.12"
+    "208.67.222.222" "208.67.220.220" "208.67.222.123" "208.67.220.123"
+    "8.26.56.26" "8.20.247.20"
+    "209.244.0.3" "209.244.0.4"
+    "64.6.64.6" "64.6.65.6"
+    "84.200.69.80" "84.200.70.40"
+    "156.154.70.1" "156.154.71.1" "156.154.70.2" "156.154.71.2"
+    "156.154.70.3" "156.154.71.3" "156.154.70.4" "156.154.71.4"
+    "156.154.70.5" "156.154.71.5"
+    "195.46.39.39" "195.46.39.40"
+    "216.146.35.35" "216.146.36.36"
+    "37.235.1.174" "37.235.1.177"
+    "76.76.19.19" "76.223.122.150"
+    "94.140.14.14" "94.140.15.15" "94.140.14.15" "94.140.15.16"
+    "94.140.14.140" "94.140.14.141"
+    "185.228.168.9" "185.228.169.9" "185.228.168.168" "185.228.169.168"
+    "185.228.168.10" "185.228.169.11"
+    "77.88.8.8" "77.88.8.1" "77.88.8.88" "77.88.8.2" "77.88.8.7" "77.88.8.3"
+    "114.114.114.114" "114.114.115.115" "114.114.114.119" "114.114.115.119"
+    "1.2.4.8" "210.2.4.8"
+    "194.242.2.2" "194.242.2.3" "194.242.2.4" "194.242.2.5" "194.242.2.9"
+    "45.90.28.0" "45.90.30.0" "45.90.28.167" "45.90.30.167"
+    "76.76.2.0" "76.76.10.0" "76.76.2.1" "76.76.10.1"
+    "76.76.2.2" "76.76.10.2" "76.76.2.3" "76.76.10.3"
+    "76.76.2.4" "76.76.10.4" "76.76.2.5" "76.76.10.5"
+    "88.198.92.222"
+    "185.222.222.222" "45.11.45.11"
+    "5.2.75.75"
+    "91.239.100.100" "89.233.43.71"
+    "185.12.64.1" "185.12.64.2"
+    "109.69.8.51"
+    "146.255.56.98"
+    "149.112.121.10" "149.112.122.10" "149.112.121.20" "149.112.122.20"
+    "149.112.121.30" "149.112.122.30"
+    "193.58.251.251"
+    "104.155.237.225" "104.197.28.121"
+    "180.131.144.144" "180.131.145.145"
+    "193.17.47.1" "193.17.47.15"
+    "74.82.42.42"
+    "62.210.16.6"
+    "172.104.237.57" "185.121.177.177"
+    "178.79.131.110" "176.9.37.132"
+    "176.9.93.198" "176.103.130.130" "176.103.130.131"
+    "158.64.1.29"
+    "80.67.169.12" "80.67.169.40"
+    "185.43.135.1"
+    "101.101.101.101" "101.102.103.104"
+    "168.95.1.1" "168.95.192.1"
+    "223.5.5.5" "223.6.6.6"
+    "119.29.29.29" "119.28.28.28"
+    "180.76.76.76"
+    "117.50.10.10" "117.50.20.20"
+    "101.226.4.6" "218.30.118.6"
+    "168.126.63.1" "168.126.63.2"
+    "164.124.101.2" "203.248.252.2"
+    "210.220.163.82" "219.250.36.130"
+    "129.250.35.250" "129.250.35.251"
+    "210.130.0.1" "210.130.1.1"
+    "203.178.136.1"
+    "204.117.214.10" "199.2.252.10"
+    "46.182.19.48"
+    "80.80.80.80" "80.80.81.81"
+    "85.214.20.141"
+    "78.46.244.143"
+    "159.69.198.101"
+    "116.202.176.26"
+    "116.203.70.156"
+    "51.15.98.97"
+    "139.59.48.222"
+    "188.166.18.30"
+    "159.89.120.99"
+    "134.195.4.2"
+    "136.144.215.158"
+    "139.162.112.47"
+    "107.150.40.234"
+    "108.61.201.119"
+    "198.101.242.72"
+    "207.148.83.241"
+    "104.236.210.29"
+    "45.33.32.156"
+    "66.70.228.164"
+    "103.86.96.100" "103.86.99.100"
+    "199.85.126.10" "199.85.127.10"
+    "203.67.25.110"
+    "203.198.7.66"
+    "217.160.70.42"
+    "4.2.2.1" "4.2.2.2" "4.2.2.3" "4.2.2.4" "4.2.2.5" "4.2.2.6"
+    "205.171.3.65" "205.171.2.65"
+    "198.153.192.1" "198.153.194.1"
+    "208.76.50.50" "208.76.51.51"
+    "216.87.84.211"
+    "23.253.163.53"
+    "199.255.137.34"
+    "208.69.38.205" "208.69.39.205"
+    "91.217.137.37"
+    "65.110.131.133" "65.110.131.134"
+    "209.51.161.58"
+    "199.249.148.1"
+    "169.239.202.202"
+    "196.46.173.196"
+    "41.58.188.34"
+    "102.134.96.1"
+    "197.234.240.1"
+    "41.203.197.12"
+    "154.70.1.1"
+    "105.235.100.100"
+    "41.211.233.9"
+    "110.232.176.19"
+    "202.46.34.75" "202.46.34.76"
+    "202.136.162.11"
+    "61.8.0.113"
+    "202.134.0.155"
+    "202.62.2.24" "202.62.2.25"
+    "103.228.184.1"
+    "103.247.36.36"
+    "200.1.123.46"
+    "200.0.11.11"
+    "190.232.33.32"
+    "200.95.144.3" "200.95.144.4"
+    "200.115.192.12"
+    "200.221.11.100" "200.221.11.101"
+    "69.10.33.10" "69.10.44.10"
+    "68.94.156.1" "68.94.157.1"
+    "205.152.37.23"
+    "205.134.202.146"
+    "50.116.23.211"
+    "66.244.95.20"
+    "96.90.175.167"
+    "38.132.106.168"
+    "174.138.21.128"
+    "5.1.66.255"
+    "82.141.39.32"
+    "50.0.0.1" "50.0.0.2"
+    "198.54.117.10" "198.54.117.11"
+    "199.5.157.131"
+    "208.43.71.1"
+    "72.14.189.120"
+    "119.18.152.3" "119.18.152.5"
+    "202.56.250.36" "202.56.250.37"
+    "203.115.81.30" "203.115.81.35"
+    "121.29.36.1" "121.29.36.3"
+    "202.45.84.58"
+    "218.248.241.3"
+    "115.68.100.100" "115.68.100.200"
+    "202.248.37.74"
+    "202.12.27.33"
+    "160.16.59.181"
+    "175.100.54.30"
+    "202.83.20.101"
+    "202.14.67.4" "202.14.67.14"
+    "123.108.8.8"
+    "202.188.0.133" "202.188.1.5"
+)
+
+SCAN_SUBNETS=(
+    "1.0.0" "1.1.1" "8.8.8" "8.8.4" "9.9.9"
+    "208.67.222" "208.67.220" "149.112.112"
+    "94.140.14" "94.140.15"
+    "185.228.168" "185.228.169"
+    "76.76.2" "76.76.10" "76.76.19"
+    "45.90.28" "45.90.30"
+    "156.154.70" "156.154.71"
+    "223.5.5" "223.6.6"
+    "119.29.29" "119.28.28"
+    "176.103.130"
+    "185.222.222"
+    "194.242.2"
+    "101.101.101"
+    "168.95.1" "168.95.192"
+    "114.114.114" "114.114.115"
+    "77.88.8"
+    "195.46.39"
+    "84.200.69" "84.200.70"
+    "185.12.64"
+    "185.43.135"
+    "103.86.96" "103.86.99"
+    "199.85.126" "199.85.127"
+    "129.250.35"
+    "210.130.0" "210.130.1"
+)
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$1] $2"
@@ -100,76 +285,34 @@ next_dns() {
     log "SWITCH" "$old -> ${DNS_SERVERS[$IDX]} (switch #$SWITCHES)"
 }
 
-# ═══ AUTO SCAN: Find new DNS servers ═══
-auto_scan() {
-    source "$CONFIG_FILE" 2>/dev/null
-    local scan_on=${AUTO_SCAN_ENABLED:-false}
-    [ "$scan_on" != "true" ] && return
-
-    local scan_count=${AUTO_SCAN_COUNT:-30}
-    local scan_domain=${AUTO_SCAN_DOMAIN:-}
-    local scan_port=${AUTO_SCAN_PORT:-53}
-
-    [ -z "$scan_domain" ] && return
-
-    if ! command -v dig &>/dev/null; then
-        log "WARNING" "dig not installed, cannot auto-scan"
-        return
-    fi
-
-    log "INFO" "AUTO-SCAN: Starting scan for $scan_count DNS servers"
-
-    local RANGES=(
-        "1.0" "1.1" "4.2" "5.2" "8.8" "8.26" "9.9" "23.253"
-        "37.235" "45.33" "45.90" "46.182" "51.15" "62.210"
-        "64.6" "66.70" "74.82" "77.88" "78.46" "80.67"
-        "80.80" "84.200" "85.214" "89.233" "91.239" "94.140"
-        "101.226" "103.86" "104.236" "107.150" "108.61"
-        "114.114" "115.159" "116.202" "116.203" "119.29"
-        "134.195" "136.144" "139.59" "139.162" "149.112"
-        "156.154" "159.69" "159.89" "168.95" "172.64"
-        "172.104" "176.9" "176.103" "178.79" "185.121"
-        "185.184" "185.222" "185.228" "185.253" "188.166"
-        "193.17" "193.110" "194.36" "195.10" "195.46"
-        "198.101" "199.85" "203.67" "203.198" "207.148"
-        "208.67" "208.76" "209.244" "216.146" "217.160"
-    )
-
-    local new_dns=()
-    local new_domains=()
-    local found=0
-    local tested=0
-
-    while [ $found -lt $scan_count ] && [ $tested -lt 5000 ]; do
-        local range="${RANGES[$((RANDOM % ${#RANGES[@]}))]}"
-        local ip="${range}.$((RANDOM % 256)).$((RANDOM % 254 + 1))"
-        tested=$((tested + 1))
-
-        local r=$(timeout 2 dig @"$ip" google.com +short +time=1 +tries=1 2>/dev/null)
-        if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+'; then
-            local r2=$(timeout 2 dig @"$ip" cloudflare.com +short +time=1 +tries=1 2>/dev/null)
-            if [ -n "$r2" ] && echo "$r2" | grep -qE '^[0-9]+\.[0-9]+'; then
-                local dup=false
-                for e in "${new_dns[@]}"; do [ "$e" = "${ip}:${scan_port}" ] && { dup=true; break; }; done
-                if [ "$dup" = false ]; then
-                    found=$((found + 1))
-                    new_dns+=("${ip}:${scan_port}")
-                    new_domains+=("$scan_domain")
-                    log "INFO" "AUTO-SCAN: [$found/$scan_count] Found ${ip}:${scan_port}"
-                fi
-            fi
-        fi
+shuffle_array() {
+    local -n arr=$1
+    local n=${#arr[@]}
+    for ((i = n - 1; i > 0; i--)); do
+        local j=$((RANDOM % (i + 1)))
+        local tmp="${arr[$i]}"
+        arr[$i]="${arr[$j]}"
+        arr[$j]="$tmp"
     done
+}
 
-    if [ $found -gt 0 ]; then
-        DNS_SERVERS=("${new_dns[@]}")
-        DOMAINS=("${new_domains[@]}")
-        TOTAL=${#DNS_SERVERS[@]}
-        IDX=0
+test_dns_server() {
+    local ip="$1"
+    local r
+    r=$(timeout 3 dig @"$ip" google.com A +short +time=2 +tries=1 2>/dev/null)
+    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+        local r2
+        r2=$(timeout 3 dig @"$ip" cloudflare.com A +short +time=2 +tries=1 2>/dev/null)
+        if [ -n "$r2" ] && echo "$r2" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+            return 0
+        fi
+    fi
+    return 1
+}
 
-        # Save to config
-        cat > "$CONFIG_FILE" << SCANEOF
-# DNSTT-DNS-Changer Config - Auto-scanned $(date)
+save_config_file() {
+    cat > "$CONFIG_FILE" << SCANEOF
+# DNSTT-DNS-Changer Config - Updated $(date)
 DNS_SERVERS=(
 $(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
 )
@@ -194,8 +337,95 @@ AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
 SCANEOF
+}
 
-        log "INFO" "AUTO-SCAN: Complete! Found $found DNS, replaced config"
+auto_scan() {
+    source "$CONFIG_FILE" 2>/dev/null
+    local scan_on=${AUTO_SCAN_ENABLED:-false}
+    [ "$scan_on" != "true" ] && return
+
+    local scan_count=${AUTO_SCAN_COUNT:-30}
+    local scan_domain=${AUTO_SCAN_DOMAIN:-}
+    local scan_port=${AUTO_SCAN_PORT:-53}
+
+    [ -z "$scan_domain" ] && return
+
+    if ! command -v dig &>/dev/null; then
+        log "WARNING" "dig not installed, installing..."
+        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null
+        if ! command -v dig &>/dev/null; then
+            log "ERROR" "Cannot install dig, aborting scan"
+            return
+        fi
+    fi
+
+    log "INFO" "AUTO-SCAN: Starting scan for $scan_count DNS servers"
+
+    local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
+    shuffle_array SCAN_LIST
+
+    local new_dns=()
+    local new_domains=()
+    local found=0
+    local tested=0
+
+    # Phase 1: Test known DNS servers
+    log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS servers"
+
+    for ip in "${SCAN_LIST[@]}"; do
+        [ $found -ge $scan_count ] && break
+        tested=$((tested + 1))
+
+        if [ $((tested % 50)) -eq 0 ]; then
+            log "INFO" "AUTO-SCAN: Progress: tested=$tested found=$found"
+        fi
+
+        local dup=false
+        for e in "${new_dns[@]}"; do
+            [ "$e" = "${ip}:${scan_port}" ] && { dup=true; break; }
+        done
+        [ "$dup" = true ] && continue
+
+        if test_dns_server "$ip"; then
+            found=$((found + 1))
+            new_dns+=("${ip}:${scan_port}")
+            new_domains+=("$scan_domain")
+            log "INFO" "AUTO-SCAN: [$found/$scan_count] Found ${ip}:${scan_port}"
+        fi
+    done
+
+    # Phase 2: Random scan on known DNS subnets
+    if [ $found -lt $scan_count ]; then
+        log "INFO" "AUTO-SCAN: Phase 2 - Random scanning (need $((scan_count - found)) more)"
+
+        local extra_tested=0
+        while [ $found -lt $scan_count ] && [ $extra_tested -lt 2000 ]; do
+            local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
+            local ip="${subnet}.$((RANDOM % 254 + 1))"
+            extra_tested=$((extra_tested + 1))
+
+            local dup=false
+            for e in "${new_dns[@]}"; do
+                [ "$e" = "${ip}:${scan_port}" ] && { dup=true; break; }
+            done
+            [ "$dup" = true ] && continue
+
+            if test_dns_server "$ip"; then
+                found=$((found + 1))
+                new_dns+=("${ip}:${scan_port}")
+                new_domains+=("$scan_domain")
+                log "INFO" "AUTO-SCAN: [$found/$scan_count] Found ${ip}:${scan_port} (random)"
+            fi
+        done
+    fi
+
+    if [ $found -gt 0 ]; then
+        DNS_SERVERS=("${new_dns[@]}")
+        DOMAINS=("${new_domains[@]}")
+        TOTAL=${#DNS_SERVERS[@]}
+        IDX=0
+        save_config_file
+        log "INFO" "AUTO-SCAN: Complete! Found $found DNS servers, config updated"
     else
         log "ERROR" "AUTO-SCAN: No DNS found after $tested tests"
     fi
@@ -218,18 +448,13 @@ try_all_servers() {
 
     log "ERROR" "ALL $TOTAL servers failed!"
 
-    # ═══ AUTO-SCAN TRIGGER ═══
     source "$CONFIG_FILE" 2>/dev/null
     local scan_on=${AUTO_SCAN_ENABLED:-false}
-    local scan_trigger=${AUTO_SCAN_TRIGGER:-2}
 
-    # Count how many working DNS we have left
-    # If all failed, we have 0 working = trigger auto-scan
     if [ "$scan_on" = "true" ]; then
         log "INFO" "AUTO-SCAN triggered: all servers down"
         auto_scan
 
-        # Try the new servers
         if [ ${#DNS_SERVERS[@]} -gt 0 ]; then
             log "INFO" "Trying newly scanned servers..."
             IDX=0
@@ -242,7 +467,6 @@ try_all_servers() {
                     return 0
                 fi
             fi
-            # Try rest of new servers
             local t2=0
             while [ $t2 -lt $TOTAL ]; do
                 next_dns
@@ -267,8 +491,8 @@ try_all_servers() {
 
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
-# ═══ MAIN ═══
-log "INFO" "v1.9.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+# MAIN
+log "INFO" "v1.9.1 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
     apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null
