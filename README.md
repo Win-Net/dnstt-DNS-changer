@@ -58,7 +58,7 @@ winnet-dnstt
 | 9 | Show Config |
 | 10 | Add DNS Servers |
 | 11 | Remove DNS server |
-| 12 | Scan & Add |
+| 12 | Scan & Add DNS (Real Test) |
 | 13 | Auto-Scan Setting |
 | 14 | Update Script |
 | 15 | Uninstall |
@@ -160,7 +160,7 @@ winnet-dnstt
 | 9 | نمایش تنظیمات |
 | 10 | افزودن سرورهای DNS |
 | 11 | حذف سرور DNS |
-| 12 | اسکن و اضافه کردن |
+| 12 | اسکن و اضافه کردن DNS (تست واقعی) |
 | 13 | تنظیمات اسکن خودکار |
 | 14 | آپدیت اسکریپت |
 | 15 | حذف |
