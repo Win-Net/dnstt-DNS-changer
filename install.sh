@@ -4,7 +4,6 @@
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-set -e
 VERSION="2.0.0"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
 INSTALL_DIR="/etc/dnstt-DNS-changer"
@@ -34,7 +33,9 @@ fi
 
 if [ "$IS_UPDATE" = true ]; then
     echo -e "${WHITE}[1/3] Stopping...${NC}"
-    systemctl stop "$SERVICE" 2>/dev/null; pkill -9 -f "dnstt-client" 2>/dev/null; sleep 1
+    systemctl stop "$SERVICE" 2>/dev/null || true
+    pkill -9 -f "dnstt-client" 2>/dev/null || true
+    sleep 1
     echo -e "  ${GREEN}✓${NC}"
 
     echo -e "${WHITE}[2/3] Updating...${NC}"
@@ -64,7 +65,7 @@ WantedBy=multi-user.target
 SVCEOF
     systemctl daemon-reload
 
-    # Add auto-scan fields to existing config if missing
+    # Add new fields to existing config if missing
     if [ -f "$INSTALL_DIR/config.conf" ]; then
         if ! grep -q "AUTO_SCAN_ENABLED" "$INSTALL_DIR/config.conf" 2>/dev/null; then
             echo "" >> "$INSTALL_DIR/config.conf"
@@ -76,13 +77,18 @@ SVCEOF
             echo 'AUTO_SCAN_PORT=53' >> "$INSTALL_DIR/config.conf"
             echo -e "  ${GREEN}✓ Auto-scan config added${NC}"
         fi
+        if ! grep -q "SCAN_TEST_PORT" "$INSTALL_DIR/config.conf" 2>/dev/null; then
+            echo 'SCAN_TEST_PORT=0' >> "$INSTALL_DIR/config.conf"
+            echo -e "  ${GREEN}✓ Scan test port config added${NC}"
+        fi
     fi
 
     echo -e "  ${GREEN}✓${NC}"
 
     echo -e "${WHITE}[3/3] Starting...${NC}"
-    systemctl start "$SERVICE" 2>/dev/null; sleep 3
-    systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ winnet-dnstt${NC}"
+    systemctl start "$SERVICE" 2>/dev/null || true
+    sleep 3
+    systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠ Check: winnet-dnstt${NC}"
     echo ""
     echo -e "${GREEN}  ✓ Updated to v$VERSION | CLI: ${WHITE}winnet-dnstt${NC}"
     exit 0
@@ -92,10 +98,10 @@ fi
 
 echo -e "${WHITE}[1/7] Dependencies...${NC}"
 if command -v apt-get &>/dev/null; then
-    apt-get update -qq >/dev/null 2>&1
-    apt-get install -y -qq curl wget dnsutils >/dev/null 2>&1
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y -qq curl wget dnsutils >/dev/null 2>&1 || true
 elif command -v yum &>/dev/null; then
-    yum install -y -q curl wget bind-utils >/dev/null 2>&1
+    yum install -y -q curl wget bind-utils >/dev/null 2>&1 || true
 fi
 echo -e "  ${GREEN}✓${NC}"
 
@@ -148,7 +154,7 @@ if [ ${#DNS_L[@]} -gt 0 ]; then
     echo -ne "  ${WHITE}Protocol (udp/dot) [udp]: ${NC}"; read -r pr; pr=${pr:-udp}
 
     # Read existing config for other values
-    source "$INSTALL_DIR/config.conf" 2>/dev/null
+    source "$INSTALL_DIR/config.conf" 2>/dev/null || true
 
     cat > "$INSTALL_DIR/config.conf" << CONFEOF
 # DNSTT-DNS-Changer Configuration v2.0.0
@@ -179,6 +185,7 @@ AUTO_SCAN_TRIGGER=${AUTO_SCAN_TRIGGER:-2}
 AUTO_SCAN_COUNT=${AUTO_SCAN_COUNT:-30}
 AUTO_SCAN_DOMAIN="${AUTO_SCAN_DOMAIN:-}"
 AUTO_SCAN_PORT=${AUTO_SCAN_PORT:-53}
+SCAN_TEST_PORT=0
 CONFEOF
     echo -e "  ${GREEN}✓ Config customized (port: $sp)${NC}"
 else
@@ -212,13 +219,14 @@ SendSIGKILL=yes
 [Install]
 WantedBy=multi-user.target
 SVCEOF
-systemctl daemon-reload; systemctl enable "$SERVICE" >/dev/null 2>&1
+systemctl daemon-reload
+systemctl enable "$SERVICE" >/dev/null 2>&1 || true
 echo -e "  ${GREEN}✓${NC}"
 
 echo -e "${WHITE}[7/7] Start...${NC}"
 if [ -f "/root/dnstt-client-linux-amd64" ] && [ -f "/root/pub.key" ]; then
     echo -ne "  ${WHITE}Start? (y/n): ${NC}"; read -r sn
-    [ "$sn" = "y" ] && { systemctl start "$SERVICE"; sleep 3; systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠${NC}"; }
+    [ "$sn" = "y" ] && { systemctl start "$SERVICE" 2>/dev/null || true; sleep 3; systemctl is-active --quiet "$SERVICE" && echo -e "  ${GREEN}✓ Running!${NC}" || echo -e "  ${YELLOW}⚠${NC}"; }
 else
     echo -e "  ${YELLOW}Upload files to /root/ first${NC}"
 fi
