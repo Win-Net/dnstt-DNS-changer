@@ -1,10 +1,10 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer CLI (winnet-dnstt) v2.0.1
+# DNSTT-DNS-Changer CLI (winnet-dnstt) v2.1.0
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
-VERSION="2.0.1"
+VERSION="2.1.0"
 SERVICE_NAME="dnstt-DNS-changer"
 CONFIG_FILE="/etc/dnstt-DNS-changer/config.conf"
 REPO="https://raw.githubusercontent.com/Win-Net/dnstt-DNS-changer/main"
@@ -47,16 +47,14 @@ KNOWN_DNS_LIST=(
     "5.2.75.75"
     "91.239.100.100" "89.233.43.71"
     "185.12.64.1" "185.12.64.2"
-    "109.69.8.51"
-    "146.255.56.98"
+    "109.69.8.51" "146.255.56.98"
     "149.112.121.10" "149.112.122.10" "149.112.121.20" "149.112.122.20"
     "149.112.121.30" "149.112.122.30"
     "193.58.251.251"
     "104.155.237.225" "104.197.28.121"
     "180.131.144.144" "180.131.145.145"
     "193.17.47.1" "193.17.47.15"
-    "74.82.42.42"
-    "62.210.16.6"
+    "74.82.42.42" "62.210.16.6"
     "172.104.237.57" "185.121.177.177"
     "178.79.131.110" "176.9.37.132"
     "176.9.93.198" "176.103.130.130" "176.103.130.131"
@@ -79,88 +77,42 @@ KNOWN_DNS_LIST=(
     "204.117.214.10" "199.2.252.10"
     "46.182.19.48"
     "80.80.80.80" "80.80.81.81"
-    "85.214.20.141"
-    "78.46.244.143"
-    "159.69.198.101"
-    "116.202.176.26"
-    "116.203.70.156"
-    "51.15.98.97"
-    "139.59.48.222"
-    "188.166.18.30"
-    "159.89.120.99"
-    "134.195.4.2"
-    "136.144.215.158"
-    "139.162.112.47"
-    "107.150.40.234"
-    "108.61.201.119"
-    "198.101.242.72"
-    "207.148.83.241"
-    "104.236.210.29"
-    "45.33.32.156"
-    "66.70.228.164"
+    "85.214.20.141" "78.46.244.143"
+    "159.69.198.101" "116.202.176.26" "116.203.70.156"
+    "51.15.98.97" "139.59.48.222" "188.166.18.30" "159.89.120.99"
+    "134.195.4.2" "136.144.215.158" "139.162.112.47"
+    "107.150.40.234" "108.61.201.119" "198.101.242.72"
+    "207.148.83.241" "104.236.210.29" "45.33.32.156" "66.70.228.164"
     "103.86.96.100" "103.86.99.100"
     "199.85.126.10" "199.85.127.10"
-    "203.67.25.110"
-    "203.198.7.66"
-    "217.160.70.42"
+    "203.67.25.110" "203.198.7.66" "217.160.70.42"
     "4.2.2.1" "4.2.2.2" "4.2.2.3" "4.2.2.4" "4.2.2.5" "4.2.2.6"
     "205.171.3.65" "205.171.2.65"
     "198.153.192.1" "198.153.194.1"
-    "208.76.50.50" "208.76.51.51"
-    "216.87.84.211"
-    "23.253.163.53"
-    "199.255.137.34"
+    "208.76.50.50" "208.76.51.51" "216.87.84.211"
+    "23.253.163.53" "199.255.137.34"
     "208.69.38.205" "208.69.39.205"
-    "91.217.137.37"
-    "65.110.131.133" "65.110.131.134"
-    "209.51.161.58"
-    "199.249.148.1"
-    "169.239.202.202"
-    "196.46.173.196"
-    "102.134.96.1"
-    "197.234.240.1"
-    "110.232.176.19"
-    "202.46.34.75" "202.46.34.76"
-    "202.136.162.11"
-    "61.8.0.113"
-    "202.134.0.155"
-    "202.62.2.24" "202.62.2.25"
-    "103.228.184.1"
-    "103.247.36.36"
-    "200.1.123.46"
-    "200.0.11.11"
-    "190.232.33.32"
-    "200.95.144.3" "200.95.144.4"
-    "200.115.192.12"
+    "91.217.137.37" "65.110.131.133" "65.110.131.134"
+    "209.51.161.58" "199.249.148.1"
+    "169.239.202.202" "196.46.173.196" "102.134.96.1" "197.234.240.1"
+    "110.232.176.19" "202.46.34.75" "202.46.34.76"
+    "202.136.162.11" "61.8.0.113" "202.134.0.155"
+    "202.62.2.24" "202.62.2.25" "103.228.184.1" "103.247.36.36"
+    "200.1.123.46" "200.0.11.11" "190.232.33.32"
+    "200.95.144.3" "200.95.144.4" "200.115.192.12"
     "200.221.11.100" "200.221.11.101"
     "69.10.33.10" "69.10.44.10"
-    "205.152.37.23"
-    "205.134.202.146"
-    "50.116.23.211"
-    "66.244.95.20"
-    "96.90.175.167"
-    "38.132.106.168"
-    "174.138.21.128"
-    "82.141.39.32"
-    "198.54.117.10" "198.54.117.11"
-    "199.5.157.131"
-    "208.43.71.1"
-    "72.14.189.120"
+    "205.152.37.23" "205.134.202.146" "50.116.23.211"
+    "66.244.95.20" "96.90.175.167" "38.132.106.168" "174.138.21.128"
+    "82.141.39.32" "198.54.117.10" "198.54.117.11"
+    "199.5.157.131" "208.43.71.1" "72.14.189.120"
     "119.18.152.3" "119.18.152.5"
-    "202.56.250.36" "202.56.250.37"
-    "203.115.81.30" "203.115.81.35"
-    "121.29.36.1" "121.29.36.3"
-    "202.45.84.58"
-    "218.248.241.3"
+    "202.56.250.36" "202.56.250.37" "203.115.81.30" "203.115.81.35"
+    "121.29.36.1" "121.29.36.3" "202.45.84.58" "218.248.241.3"
     "115.68.100.100" "115.68.100.200"
-    "202.248.37.74"
-    "202.12.27.33"
-    "160.16.59.181"
-    "175.100.54.30"
-    "202.83.20.101"
-    "202.14.67.4" "202.14.67.14"
-    "123.108.8.8"
-    "202.188.0.133" "202.188.1.5"
+    "202.248.37.74" "202.12.27.33" "160.16.59.181" "175.100.54.30"
+    "202.83.20.101" "202.14.67.4" "202.14.67.14"
+    "123.108.8.8" "202.188.0.133" "202.188.1.5"
     "2.144.4.202"
     "178.22.122.100" "185.51.200.2"
     "78.157.42.100" "78.157.42.101"
@@ -215,36 +167,23 @@ KNOWN_DNS_LIST=(
 SCAN_SUBNETS=(
     "1.0.0" "1.1.1" "8.8.8" "8.8.4" "9.9.9"
     "208.67.222" "208.67.220" "149.112.112"
-    "94.140.14" "94.140.15"
-    "185.228.168" "185.228.169"
-    "76.76.2" "76.76.10" "76.76.19"
-    "45.90.28" "45.90.30"
-    "156.154.70" "156.154.71"
-    "223.5.5" "223.6.6"
-    "119.29.29" "119.28.28"
-    "176.103.130" "185.222.222" "194.242.2"
+    "94.140.14" "94.140.15" "185.228.168" "185.228.169"
+    "76.76.2" "76.76.10" "76.76.19" "45.90.28" "45.90.30"
+    "156.154.70" "156.154.71" "223.5.5" "223.6.6"
+    "119.29.29" "119.28.28" "176.103.130" "185.222.222" "194.242.2"
     "101.101.101" "168.95.1" "168.95.192"
     "114.114.114" "114.114.115" "77.88.8"
     "195.46.39" "84.200.69" "84.200.70"
-    "185.12.64" "185.43.135"
-    "103.86.96" "103.86.99"
-    "199.85.126" "199.85.127"
-    "129.250.35" "210.130.0" "210.130.1"
-    "178.22.122" "185.51.200"
-    "78.157.42" "185.55.225" "185.55.226"
-    "217.218.155" "217.218.127"
-    "185.231.182" "78.158.171"
-    "5.202.100" "85.15.1"
-    "31.7.57" "5.160.139"
+    "185.12.64" "185.43.135" "103.86.96" "103.86.99"
+    "199.85.126" "199.85.127" "129.250.35" "210.130.0" "210.130.1"
+    "178.22.122" "185.51.200" "78.157.42" "185.55.225" "185.55.226"
+    "217.218.155" "217.218.127" "185.231.182" "78.158.171"
+    "5.202.100" "85.15.1" "31.7.57" "5.160.139"
     "91.92.22" "185.136.170" "185.136.171"
-    "46.224.1" "188.229.237"
-    "5.144.132" "91.99.101"
-    "5.63.0" "185.105.187"
-    "185.171.23" "79.175.131"
-    "94.232.173" "5.200.200"
-    "185.37.35" "194.36.174"
-    "2.144.4"
-    "4.2.2" "64.6.64" "64.6.65"
+    "46.224.1" "188.229.237" "5.144.132" "91.99.101"
+    "5.63.0" "185.105.187" "185.171.23" "79.175.131"
+    "94.232.173" "5.200.200" "185.37.35" "194.36.174"
+    "2.144.4" "4.2.2" "64.6.64" "64.6.65"
     "209.244.0" "216.146.35" "216.146.36"
 )
 
@@ -325,7 +264,7 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Config"
     echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Servers"
     echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Remove DNS Server"
-    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS (Real Test)"
+    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS (Two-Phase)"
     echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Auto-Scan Settings"
     echo -e "  ${CYAN}[${WHITE}14${CYAN}]${NC}  Update Script"
     echo -e "  ${CYAN}[${WHITE}15${CYAN}]${NC}  Uninstall"
@@ -337,7 +276,7 @@ show_menu() {
 
 save_config() {
     cat > "$CONFIG_FILE" << EOF
-# DNSTT-DNS-Changer Config v2.0.1 - $(date)
+# DNSTT-DNS-Changer Config v2.1.0 - $(date)
 DNS_SERVERS=(
 $(for s in "${DNS_SERVERS[@]}"; do echo "    \"$s\""; done)
 )
@@ -390,6 +329,23 @@ kill_scan_dnstt() {
     done
 }
 
+quick_dns_test() {
+    local ip="$1"
+    if is_blacklisted "$ip"; then
+        return 1
+    fi
+    local r
+    r=$(timeout 3 dig @"$ip" google.com A +short +time=2 +tries=1 2>/dev/null)
+    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+        return 0
+    fi
+    r=$(timeout 3 dig @"$ip" aparat.com A +short +time=2 +tries=1 2>/dev/null)
+    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+        return 0
+    fi
+    return 1
+}
+
 real_test_dns() {
     local ip="$1"
     local dns_port="$2"
@@ -426,7 +382,7 @@ real_test_dns() {
         $binary -udp "${ip}:${dns_port}" -pubkey-file "$pubkey" "$domain" "$test_listen" &
     fi
     scan_pid=$!
-    sleep 5
+    sleep 4
 
     if ! kill -0 $scan_pid 2>/dev/null; then
         return 1
@@ -438,9 +394,9 @@ real_test_dns() {
     fi
 
     local ok=false
-    if timeout 15 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+    if timeout 10 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
         ok=true
-    elif timeout 15 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+    elif timeout 10 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
         ok=true
     fi
 
@@ -570,12 +526,18 @@ opt_remove_dns() {
 }
 
 opt_scan_dns() {
-    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner (Real Connection Test) ===${NC}"; echo ""
+    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner (Two-Phase) ===${NC}"; echo ""
 
     [ ! -f "/root/dnstt-client-linux-amd64" ] && { echo -e "  ${RED}Missing dnstt-client!${NC}"; read -p "  Press Enter..."; return; }
     [ ! -f "/root/pub.key" ] && { echo -e "  ${RED}Missing pub.key!${NC}"; read -p "  Press Enter..."; return; }
 
-    echo -ne "  ${WHITE}How many DNS to find? [10]: ${NC}"; read -r st; st=${st:-10}
+    if ! command -v dig &>/dev/null; then
+        echo -e "  ${YELLOW}Installing dig...${NC}"
+        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null || true
+        command -v dig &>/dev/null || { echo -e "  ${RED}Failed to install dig!${NC}"; read -p "  Press Enter..."; return; }
+    fi
+
+    echo -ne "  ${WHITE}How many DNS to find? [5]: ${NC}"; read -r st; st=${st:-5}
     echo -ne "  ${WHITE}Domain (your dnstt domain): ${NC}"; read -r sd; [ -z "$sd" ] && { echo -e "  ${RED}Required!${NC}"; read -p "  Press Enter..."; return; }
     echo -ne "  ${WHITE}DNS Port [53]: ${NC}"; read -r sp; sp=${sp:-53}
     echo -ne "  ${WHITE}Replace or add? (replace/add) [add]: ${NC}"; read -r sm; sm=${sm:-add}
@@ -583,44 +545,112 @@ opt_scan_dns() {
     load_config
 
     echo ""
-    echo -e "  ${YELLOW}⚠ Service will be stopped during scan${NC}"
-    echo -e "  ${YELLOW}⚠ Each DNS takes ~20s to test (real dnstt connection)${NC}"
+    echo -e "  ${WHITE}Scan method:${NC}"
+    echo -e "    ${CYAN}Phase 1:${NC} Quick dig test (~3s each) - find reachable DNS"
+    echo -e "    ${CYAN}Phase 2:${NC} Real dnstt test (~15s each) - verify connection"
+    echo ""
     echo -ne "  ${WHITE}Continue? (y/n): ${NC}"; read -r cont
     [ "$cont" != "y" ] && { read -p "  Press Enter..."; return; }
 
     echo ""
-    echo -e "  ${YELLOW}Stopping service...${NC}"
+    echo -e "  ${YELLOW}Stopping service for scan...${NC}"
     full_stop
     sleep 2
 
     [ "$sm" = "replace" ] && { DNS_SERVERS=(); DOMAINS=(); }
 
-    local found=0 tested=0 failed=0 skipped=0 start=$(date +%s)
+    local start=$(date +%s)
 
+    # ═══ PHASE 1: Quick dig test ═══
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
     shuffle_array SCAN_LIST
 
     echo ""
-    echo -e "  ${CYAN}Phase 1: Testing ${#SCAN_LIST[@]} DNS servers with real dnstt connection...${NC}"
-    echo -e "  ${GRAY}(Each test: start dnstt -> open SOCKS -> test internet -> cleanup)${NC}"
+    echo -e "  ${CYAN}━━━ Phase 1: Quick DNS reachability test ━━━${NC}"
+    echo -e "  ${GRAY}Testing ${#SCAN_LIST[@]} known DNS + random subnets with dig (~3s each)${NC}"
     echo ""
 
+    local candidates=()
+    local quick_tested=0
+    local quick_skipped=0
+
     for ip in "${SCAN_LIST[@]}"; do
-        [ $found -ge $st ] && break
-        tested=$((tested + 1))
+        quick_tested=$((quick_tested + 1))
 
         if is_blacklisted "$ip"; then
-            skipped=$((skipped + 1))
+            quick_skipped=$((quick_skipped + 1))
             continue
         fi
 
         local dup=false
         for e in "${DNS_SERVERS[@]}"; do
-            [ "$e" = "${ip}:${sp}" ] && { dup=true; break; }
+            local eip="${e%%:*}"
+            [ "$eip" = "$ip" ] && { dup=true; break; }
         done
         [ "$dup" = true ] && continue
 
-        echo -ne "  ${GRAY}[$tested/${#SCAN_LIST[@]}] Testing ${ip}:${sp}...${NC} "
+        echo -ne "  ${GRAY}[Q-$quick_tested/${#SCAN_LIST[@]}] $ip ...${NC} "
+
+        if quick_dns_test "$ip"; then
+            candidates+=("$ip")
+            echo -e "${GREEN}✓ reachable${NC} (${#candidates[@]} candidates)"
+        else
+            echo -e "${RED}✗${NC}"
+        fi
+    done
+
+    # Random subnets
+    echo ""
+    echo -e "  ${GRAY}Scanning random subnets...${NC}"
+    local extra=0
+    while [ $extra -lt 200 ]; do
+        local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
+        local ip="${subnet}.$((RANDOM % 254 + 1))"
+        extra=$((extra + 1))
+        if is_blacklisted "$ip"; then continue; fi
+        local dup=false
+        for c in "${candidates[@]}"; do [ "$c" = "$ip" ] && { dup=true; break; }; done
+        [ "$dup" = true ] && continue
+        for e in "${DNS_SERVERS[@]}"; do
+            local eip="${e%%:*}"
+            [ "$eip" = "$ip" ] && { dup=true; break; }
+        done
+        [ "$dup" = true ] && continue
+        if quick_dns_test "$ip"; then
+            candidates+=("$ip")
+            echo -e "  ${GREEN}  Random: $ip ✓${NC} (${#candidates[@]} candidates)"
+        fi
+    done
+
+    local phase1_time=$(( $(date +%s) - start ))
+    echo ""
+    echo -e "  ${WHITE}Phase 1 done: ${GREEN}${#candidates[@]}${NC} reachable DNS found in ${phase1_time}s (skipped: $quick_skipped blacklisted)"
+    echo ""
+
+    if [ ${#candidates[@]} -eq 0 ]; then
+        echo -e "  ${RED}No reachable DNS found!${NC}"
+        echo -ne "  ${YELLOW}Start service? (y/n): ${NC}"; read -r r
+        [ "$r" = "y" ] && { full_start; echo -e "  ${GREEN}✓${NC}"; }
+        read -p "  Press Enter..."; return
+    fi
+
+    # ═══ PHASE 2: Real dnstt test ═══
+    echo -e "  ${CYAN}━━━ Phase 2: Real dnstt connection test ━━━${NC}"
+    echo -e "  ${GRAY}Testing ${#candidates[@]} candidates with dnstt-client (~15s each)${NC}"
+    echo -e "  ${GRAY}Estimated time: ~$(( ${#candidates[@]} * 15 / 60 )) minutes${NC}"
+    echo ""
+
+    shuffle_array candidates
+
+    local found=0
+    local real_tested=0
+    local real_failed=0
+
+    for ip in "${candidates[@]}"; do
+        [ $found -ge $st ] && break
+        real_tested=$((real_tested + 1))
+
+        echo -ne "  ${YELLOW}[$real_tested/${#candidates[@]}] Testing ${ip}:${sp} with dnstt...${NC} "
 
         if real_test_dns "$ip" "$sp" "$sd"; then
             found=$((found+1))
@@ -628,57 +658,18 @@ opt_scan_dns() {
             DOMAINS+=("$sd")
             echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
         else
-            failed=$((failed+1))
-            echo -e "${RED}✗${NC}"
+            real_failed=$((real_failed+1))
+            echo -e "${RED}✗ no tunnel${NC}"
         fi
     done
 
-    if [ $found -lt $st ]; then
-        echo ""
-        echo -e "  ${CYAN}Phase 2: Random scanning known subnets (need $((st - found)) more)...${NC}"
-        echo ""
-
-        local extra_tested=0
-        while [ $found -lt $st ] && [ $extra_tested -lt 200 ]; do
-            local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
-            local ip="${subnet}.$((RANDOM % 254 + 1))"
-            extra_tested=$((extra_tested + 1))
-            tested=$((tested + 1))
-
-            if is_blacklisted "$ip"; then
-                skipped=$((skipped + 1))
-                continue
-            fi
-
-            local dup=false
-            for e in "${DNS_SERVERS[@]}"; do
-                [ "$e" = "${ip}:${sp}" ] && { dup=true; break; }
-            done
-            [ "$dup" = true ] && continue
-
-            echo -ne "  ${GRAY}[R-$extra_tested] Testing ${ip}:${sp}...${NC} "
-
-            if real_test_dns "$ip" "$sp" "$sd"; then
-                found=$((found+1))
-                DNS_SERVERS+=("${ip}:${sp}")
-                DOMAINS+=("$sd")
-                echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
-            else
-                failed=$((failed+1))
-                echo -e "${RED}✗${NC}"
-            fi
-        done
-    fi
-
-    local elapsed=$(( $(date +%s) - start ))
+    local total_time=$(( $(date +%s) - start ))
     echo ""
     echo -e "  ${WHITE}════════════════════════════════════════${NC}"
-    echo -e "  ${WHITE}Found:   ${GREEN}$found${NC} verified DNS servers"
-    echo -e "  ${WHITE}Failed:  ${RED}$failed${NC}"
-    echo -e "  ${WHITE}Skipped: ${YELLOW}$skipped${NC} (blacklisted)"
-    echo -e "  ${WHITE}Tested:  ${CYAN}$tested${NC}"
-    echo -e "  ${WHITE}Time:    ${CYAN}${elapsed}s${NC}"
+    echo -e "  ${WHITE}Phase 1: ${CYAN}${#candidates[@]}${NC} reachable DNS (${phase1_time}s)"
+    echo -e "  ${WHITE}Phase 2: ${GREEN}$found${NC} verified / ${RED}$real_failed${NC} failed (${real_tested} tested)"
     echo -e "  ${WHITE}Total:   ${CYAN}${#DNS_SERVERS[@]}${NC} DNS in config"
+    echo -e "  ${WHITE}Time:    ${CYAN}${total_time}s${NC}"
     echo -e "  ${WHITE}════════════════════════════════════════${NC}"
 
     if [ $found -gt 0 ]; then
@@ -708,8 +699,7 @@ opt_autoscan() {
     echo -e "    Count:     ${CYAN}$ac${NC} DNS to find"
     echo -e "    Domain:    ${CYAN}$ad${NC}"
     echo -e "    DNS Port:  ${CYAN}$ap${NC}"
-    echo -e "    Test Port: ${CYAN}auto (free port)${NC}"
-    echo -e "    ${YELLOW}Uses real dnstt connection test${NC}"
+    echo -e "    ${YELLOW}Two-phase: quick dig + real dnstt test${NC}"
     echo ""
     echo -e "    ${CYAN}[1]${NC} Toggle ON/OFF"
     echo -e "    ${CYAN}[2]${NC} Set trigger count"
