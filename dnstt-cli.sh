@@ -264,7 +264,7 @@ show_menu() {
     echo -e "  ${CYAN}[${WHITE}9${CYAN}]${NC}   Show Config"
     echo -e "  ${CYAN}[${WHITE}10${CYAN}]${NC}  Add DNS Servers"
     echo -e "  ${CYAN}[${WHITE}11${CYAN}]${NC}  Remove DNS Server"
-    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS (Two-Phase)"
+    echo -e "  ${CYAN}[${WHITE}12${CYAN}]${NC}  Scan & Add DNS"
     echo -e "  ${CYAN}[${WHITE}13${CYAN}]${NC}  Auto-Scan Settings"
     echo -e "  ${CYAN}[${WHITE}14${CYAN}]${NC}  Update Script"
     echo -e "  ${CYAN}[${WHITE}15${CYAN}]${NC}  Uninstall"
@@ -329,23 +329,6 @@ kill_scan_dnstt() {
     done
 }
 
-quick_dns_test() {
-    local ip="$1"
-    if is_blacklisted "$ip"; then
-        return 1
-    fi
-    local r
-    r=$(timeout 3 dig @"$ip" google.com A +short +time=2 +tries=1 2>/dev/null)
-    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-        return 0
-    fi
-    r=$(timeout 3 dig @"$ip" aparat.com A +short +time=2 +tries=1 2>/dev/null)
-    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
-        return 0
-    fi
-    return 1
-}
-
 real_test_dns() {
     local ip="$1"
     local dns_port="$2"
@@ -373,7 +356,6 @@ real_test_dns() {
     if command -v fuser &>/dev/null; then
         fuser -k ${sport}/tcp 2>/dev/null || true
     fi
-    sleep 1
 
     local scan_pid
     if [ "$proto" = "dot" ]; then
@@ -382,11 +364,18 @@ real_test_dns() {
         $binary -udp "${ip}:${dns_port}" -pubkey-file "$pubkey" "$domain" "$test_listen" &
     fi
     scan_pid=$!
-    sleep 4
 
-    if ! kill -0 $scan_pid 2>/dev/null; then
-        return 1
-    fi
+    local w=0
+    while [ $w -lt 3 ]; do
+        sleep 1
+        w=$((w+1))
+        if ! kill -0 $scan_pid 2>/dev/null; then
+            return 1
+        fi
+        if ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
+            break
+        fi
+    done
 
     if ! ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
         kill_scan_dnstt "$scan_pid" "$sport"
@@ -394,9 +383,9 @@ real_test_dns() {
     fi
 
     local ok=false
-    if timeout 10 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+    if timeout 8 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
         ok=true
-    elif timeout 10 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+    elif timeout 8 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
         ok=true
     fi
 
@@ -526,16 +515,10 @@ opt_remove_dns() {
 }
 
 opt_scan_dns() {
-    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner (Two-Phase) ===${NC}"; echo ""
+    show_banner; echo -e "  ${WHITE}${BOLD}=== DNS Scanner (dnstt Real Test) ===${NC}"; echo ""
 
     [ ! -f "/root/dnstt-client-linux-amd64" ] && { echo -e "  ${RED}Missing dnstt-client!${NC}"; read -p "  Press Enter..."; return; }
     [ ! -f "/root/pub.key" ] && { echo -e "  ${RED}Missing pub.key!${NC}"; read -p "  Press Enter..."; return; }
-
-    if ! command -v dig &>/dev/null; then
-        echo -e "  ${YELLOW}Installing dig...${NC}"
-        apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null || true
-        command -v dig &>/dev/null || { echo -e "  ${RED}Failed to install dig!${NC}"; read -p "  Press Enter..."; return; }
-    fi
 
     echo -ne "  ${WHITE}How many DNS to find? [5]: ${NC}"; read -r st; st=${st:-5}
     echo -ne "  ${WHITE}Domain (your dnstt domain): ${NC}"; read -r sd; [ -z "$sd" ] && { echo -e "  ${RED}Required!${NC}"; read -p "  Press Enter..."; return; }
@@ -545,40 +528,37 @@ opt_scan_dns() {
     load_config
 
     echo ""
-    echo -e "  ${WHITE}Scan method:${NC}"
-    echo -e "    ${CYAN}Phase 1:${NC} Quick dig test (~3s each) - find reachable DNS"
-    echo -e "    ${CYAN}Phase 2:${NC} Real dnstt test (~15s each) - verify connection"
+    echo -e "  ${WHITE}Method:${NC} Start dnstt with each DNS -> test SOCKS -> verify"
+    echo -e "  ${WHITE}Speed:${NC}  ~5-10s per DNS (fast fail on dead ones)"
+    echo -e "  ${WHITE}Total:${NC}  ${#KNOWN_DNS_LIST[@]} DNS servers to scan"
+    echo -e "  ${YELLOW}⚠ Service will be stopped during scan${NC}"
+    echo -e "  ${GRAY}Press Ctrl+C to stop early${NC}"
     echo ""
     echo -ne "  ${WHITE}Continue? (y/n): ${NC}"; read -r cont
     [ "$cont" != "y" ] && { read -p "  Press Enter..."; return; }
 
     echo ""
-    echo -e "  ${YELLOW}Stopping service for scan...${NC}"
+    echo -e "  ${YELLOW}Stopping service...${NC}"
     full_stop
     sleep 2
 
     [ "$sm" = "replace" ] && { DNS_SERVERS=(); DOMAINS=(); }
 
-    local start=$(date +%s)
+    local found=0 tested=0 failed=0 skipped=0 start=$(date +%s)
 
-    # ═══ PHASE 1: Quick dig test ═══
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
     shuffle_array SCAN_LIST
 
     echo ""
-    echo -e "  ${CYAN}━━━ Phase 1: Quick DNS reachability test ━━━${NC}"
-    echo -e "  ${GRAY}Testing ${#SCAN_LIST[@]} known DNS + random subnets with dig (~3s each)${NC}"
+    echo -e "  ${CYAN}Scanning (stops when $st found)...${NC}"
     echo ""
 
-    local candidates=()
-    local quick_tested=0
-    local quick_skipped=0
-
     for ip in "${SCAN_LIST[@]}"; do
-        quick_tested=$((quick_tested + 1))
+        [ $found -ge $st ] && break
+        tested=$((tested + 1))
 
         if is_blacklisted "$ip"; then
-            quick_skipped=$((quick_skipped + 1))
+            skipped=$((skipped + 1))
             continue
         fi
 
@@ -589,68 +569,7 @@ opt_scan_dns() {
         done
         [ "$dup" = true ] && continue
 
-        echo -ne "  ${GRAY}[Q-$quick_tested/${#SCAN_LIST[@]}] $ip ...${NC} "
-
-        if quick_dns_test "$ip"; then
-            candidates+=("$ip")
-            echo -e "${GREEN}✓ reachable${NC} (${#candidates[@]} candidates)"
-        else
-            echo -e "${RED}✗${NC}"
-        fi
-    done
-
-    # Random subnets
-    echo ""
-    echo -e "  ${GRAY}Scanning random subnets...${NC}"
-    local extra=0
-    while [ $extra -lt 200 ]; do
-        local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
-        local ip="${subnet}.$((RANDOM % 254 + 1))"
-        extra=$((extra + 1))
-        if is_blacklisted "$ip"; then continue; fi
-        local dup=false
-        for c in "${candidates[@]}"; do [ "$c" = "$ip" ] && { dup=true; break; }; done
-        [ "$dup" = true ] && continue
-        for e in "${DNS_SERVERS[@]}"; do
-            local eip="${e%%:*}"
-            [ "$eip" = "$ip" ] && { dup=true; break; }
-        done
-        [ "$dup" = true ] && continue
-        if quick_dns_test "$ip"; then
-            candidates+=("$ip")
-            echo -e "  ${GREEN}  Random: $ip ✓${NC} (${#candidates[@]} candidates)"
-        fi
-    done
-
-    local phase1_time=$(( $(date +%s) - start ))
-    echo ""
-    echo -e "  ${WHITE}Phase 1 done: ${GREEN}${#candidates[@]}${NC} reachable DNS found in ${phase1_time}s (skipped: $quick_skipped blacklisted)"
-    echo ""
-
-    if [ ${#candidates[@]} -eq 0 ]; then
-        echo -e "  ${RED}No reachable DNS found!${NC}"
-        echo -ne "  ${YELLOW}Start service? (y/n): ${NC}"; read -r r
-        [ "$r" = "y" ] && { full_start; echo -e "  ${GREEN}✓${NC}"; }
-        read -p "  Press Enter..."; return
-    fi
-
-    # ═══ PHASE 2: Real dnstt test ═══
-    echo -e "  ${CYAN}━━━ Phase 2: Real dnstt connection test ━━━${NC}"
-    echo -e "  ${GRAY}Testing ${#candidates[@]} candidates with dnstt-client (~15s each)${NC}"
-    echo -e "  ${GRAY}Estimated time: ~$(( ${#candidates[@]} * 15 / 60 )) minutes${NC}"
-    echo ""
-
-    shuffle_array candidates
-
-    local found=0
-    local real_tested=0
-    local real_failed=0
-
-    for ip in "${candidates[@]}"; do
-        [ $found -ge $st ] && break
-        real_tested=$((real_tested + 1))
-
-        echo -ne "  ${YELLOW}[$real_tested/${#candidates[@]}] Testing ${ip}:${sp} with dnstt...${NC} "
+        echo -ne "  ${GRAY}[$tested/${#SCAN_LIST[@]}] ${ip}:${sp} ...${NC} "
 
         if real_test_dns "$ip" "$sp" "$sd"; then
             found=$((found+1))
@@ -658,18 +577,49 @@ opt_scan_dns() {
             DOMAINS+=("$sd")
             echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
         else
-            real_failed=$((real_failed+1))
-            echo -e "${RED}✗ no tunnel${NC}"
+            failed=$((failed+1))
+            echo -e "${RED}✗${NC}"
         fi
     done
 
-    local total_time=$(( $(date +%s) - start ))
+    if [ $found -lt $st ]; then
+        echo ""
+        echo -e "  ${CYAN}Random subnet scan (need $((st - found)) more)...${NC}"
+        local extra=0
+        while [ $found -lt $st ] && [ $extra -lt 100 ]; do
+            local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
+            local ip="${subnet}.$((RANDOM % 254 + 1))"
+            extra=$((extra + 1))
+            tested=$((tested + 1))
+            if is_blacklisted "$ip"; then skipped=$((skipped+1)); continue; fi
+            local dup=false
+            for e in "${DNS_SERVERS[@]}"; do
+                local eip="${e%%:*}"
+                [ "$eip" = "$ip" ] && { dup=true; break; }
+            done
+            [ "$dup" = true ] && continue
+            echo -ne "  ${GRAY}[R-$extra] ${ip}:${sp} ...${NC} "
+            if real_test_dns "$ip" "$sp" "$sd"; then
+                found=$((found+1))
+                DNS_SERVERS+=("${ip}:${sp}")
+                DOMAINS+=("$sd")
+                echo -e "${GREEN}✓ CONNECTED [$found/$st]${NC}"
+            else
+                failed=$((failed+1))
+                echo -e "${RED}✗${NC}"
+            fi
+        done
+    fi
+
+    local elapsed=$(( $(date +%s) - start ))
     echo ""
     echo -e "  ${WHITE}════════════════════════════════════════${NC}"
-    echo -e "  ${WHITE}Phase 1: ${CYAN}${#candidates[@]}${NC} reachable DNS (${phase1_time}s)"
-    echo -e "  ${WHITE}Phase 2: ${GREEN}$found${NC} verified / ${RED}$real_failed${NC} failed (${real_tested} tested)"
+    echo -e "  ${WHITE}Found:   ${GREEN}$found${NC} verified DNS servers"
+    echo -e "  ${WHITE}Failed:  ${RED}$failed${NC}"
+    echo -e "  ${WHITE}Skipped: ${YELLOW}$skipped${NC} (blacklisted)"
+    echo -e "  ${WHITE}Tested:  ${CYAN}$tested${NC}"
+    echo -e "  ${WHITE}Time:    ${CYAN}${elapsed}s${NC}"
     echo -e "  ${WHITE}Total:   ${CYAN}${#DNS_SERVERS[@]}${NC} DNS in config"
-    echo -e "  ${WHITE}Time:    ${CYAN}${total_time}s${NC}"
     echo -e "  ${WHITE}════════════════════════════════════════${NC}"
 
     if [ $found -gt 0 ]; then
@@ -699,7 +649,7 @@ opt_autoscan() {
     echo -e "    Count:     ${CYAN}$ac${NC} DNS to find"
     echo -e "    Domain:    ${CYAN}$ad${NC}"
     echo -e "    DNS Port:  ${CYAN}$ap${NC}"
-    echo -e "    ${YELLOW}Two-phase: quick dig + real dnstt test${NC}"
+    echo -e "    ${YELLOW}Uses real dnstt connection test${NC}"
     echo ""
     echo -e "    ${CYAN}[1]${NC} Toggle ON/OFF"
     echo -e "    ${CYAN}[2]${NC} Set trigger count"
