@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v2.0.1 - Real Connection Test Scanner
+# DNSTT-DNS-Changer v2.1.0 - Fast Two-Phase Scanner
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
@@ -384,6 +384,23 @@ shuffle_array() {
     done
 }
 
+quick_dns_test() {
+    local ip="$1"
+    if is_blacklisted "$ip"; then
+        return 1
+    fi
+    local r
+    r=$(timeout 3 dig @"$ip" google.com A +short +time=2 +tries=1 2>/dev/null)
+    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+        return 0
+    fi
+    r=$(timeout 3 dig @"$ip" aparat.com A +short +time=2 +tries=1 2>/dev/null)
+    if [ -n "$r" ] && echo "$r" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+        return 0
+    fi
+    return 1
+}
+
 real_test_dns() {
     local ip="$1"
     local dns_port="$2"
@@ -412,7 +429,7 @@ real_test_dns() {
         $BINARY -udp "${ip}:${dns_port}" -pubkey-file "$PUBKEY_FILE" "$domain" "$test_listen" &
     fi
     scan_pid=$!
-    sleep 5
+    sleep 4
 
     if ! kill -0 $scan_pid 2>/dev/null; then
         return 1
@@ -424,9 +441,9 @@ real_test_dns() {
     fi
 
     local ok=false
-    if timeout 15 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
+    if timeout 10 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
         ok=true
-    elif timeout 15 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
+    elif timeout 10 curl -s --socks5 "$test_listen" "http://www.gstatic.com/generate_204" -o /dev/null 2>/dev/null; then
         ok=true
     fi
 
@@ -479,37 +496,65 @@ auto_scan() {
 
     [ -z "$scan_domain" ] && return
 
-    log "INFO" "AUTO-SCAN: Starting real connection test for $scan_count DNS servers"
+    log "INFO" "AUTO-SCAN: Starting two-phase scan for $scan_count DNS servers"
 
     nuke
 
     local SCAN_LIST=("${KNOWN_DNS_LIST[@]}")
     shuffle_array SCAN_LIST
 
+    # Phase 1: Quick DNS test with dig
+    log "INFO" "AUTO-SCAN: Phase 1 - Quick DNS reachability test"
+    local candidates=()
+    local tested=0
+
+    for ip in "${SCAN_LIST[@]}"; do
+        tested=$((tested + 1))
+        if [ $((tested % 50)) -eq 0 ]; then
+            log "INFO" "AUTO-SCAN: Quick test: $tested/${#SCAN_LIST[@]}, candidates=${#candidates[@]}"
+        fi
+        if quick_dns_test "$ip"; then
+            candidates+=("$ip")
+        fi
+    done
+
+    # Phase 2: Random subnets quick test
+    local extra=0
+    while [ $extra -lt 200 ]; do
+        local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
+        local ip="${subnet}.$((RANDOM % 254 + 1))"
+        extra=$((extra + 1))
+        if is_blacklisted "$ip"; then continue; fi
+        local dup=false
+        for c in "${candidates[@]}"; do [ "$c" = "$ip" ] && { dup=true; break; }; done
+        [ "$dup" = true ] && continue
+        if quick_dns_test "$ip"; then
+            candidates+=("$ip")
+        fi
+    done
+
+    log "INFO" "AUTO-SCAN: Phase 1 complete. ${#candidates[@]} DNS candidates found"
+
+    if [ ${#candidates[@]} -eq 0 ]; then
+        log "ERROR" "AUTO-SCAN: No reachable DNS found"
+        return
+    fi
+
+    # Phase 2: Real dnstt connection test
+    log "INFO" "AUTO-SCAN: Phase 2 - Real dnstt connection test on ${#candidates[@]} candidates"
+
     local new_dns=()
     local new_domains=()
     local found=0
-    local tested=0
+    local real_tested=0
 
-    log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS (real connection)"
+    shuffle_array candidates
 
-    for ip in "${SCAN_LIST[@]}"; do
+    for ip in "${candidates[@]}"; do
         [ $found -ge $scan_count ] && break
-        tested=$((tested + 1))
+        real_tested=$((real_tested + 1))
 
-        if is_blacklisted "$ip"; then
-            continue
-        fi
-
-        if [ $((tested % 10)) -eq 0 ]; then
-            log "INFO" "AUTO-SCAN: Progress: tested=$tested found=$found"
-        fi
-
-        local dup=false
-        for e in "${new_dns[@]}"; do
-            [ "$e" = "${ip}:${scan_port}" ] && { dup=true; break; }
-        done
-        [ "$dup" = true ] && continue
+        log "INFO" "AUTO-SCAN: Real test [$real_tested/${#candidates[@]}] ${ip}:${scan_port}"
 
         if real_test_dns "$ip" "$scan_port" "$scan_domain"; then
             found=$((found + 1))
@@ -519,35 +564,6 @@ auto_scan() {
         fi
     done
 
-    if [ $found -lt $scan_count ]; then
-        log "INFO" "AUTO-SCAN: Phase 2 - Random scanning (need $((scan_count - found)) more)"
-
-        local extra_tested=0
-        while [ $found -lt $scan_count ] && [ $extra_tested -lt 200 ]; do
-            local subnet="${SCAN_SUBNETS[$((RANDOM % ${#SCAN_SUBNETS[@]}))]}"
-            local ip="${subnet}.$((RANDOM % 254 + 1))"
-            extra_tested=$((extra_tested + 1))
-            tested=$((tested + 1))
-
-            if is_blacklisted "$ip"; then
-                continue
-            fi
-
-            local dup=false
-            for e in "${new_dns[@]}"; do
-                [ "$e" = "${ip}:${scan_port}" ] && { dup=true; break; }
-            done
-            [ "$dup" = true ] && continue
-
-            if real_test_dns "$ip" "$scan_port" "$scan_domain"; then
-                found=$((found + 1))
-                new_dns+=("${ip}:${scan_port}")
-                new_domains+=("$scan_domain")
-                log "INFO" "AUTO-SCAN: [$found/$scan_count] VERIFIED ${ip}:${scan_port} (random)"
-            fi
-        done
-    fi
-
     if [ $found -gt 0 ]; then
         DNS_SERVERS=("${new_dns[@]}")
         DOMAINS=("${new_domains[@]}")
@@ -556,7 +572,7 @@ auto_scan() {
         save_config_file
         log "INFO" "AUTO-SCAN: Complete! Found $found VERIFIED DNS servers"
     else
-        log "ERROR" "AUTO-SCAN: No working DNS found after $tested tests"
+        log "ERROR" "AUTO-SCAN: No working DNS found"
     fi
 }
 
@@ -624,10 +640,13 @@ try_all_servers() {
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # MAIN
-log "INFO" "v2.0.1 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+log "INFO" "v2.1.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
     apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null || true
+fi
+if ! command -v dig &>/dev/null; then
+    apt-get install -y -qq dnsutils 2>/dev/null || yum install -y -q bind-utils 2>/dev/null || true
 fi
 
 start_dnstt
