@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# DNSTT-DNS-Changer v2.0.0 - Real Connection Test Scanner
+# DNSTT-DNS-Changer v2.0.1 - Real Connection Test Scanner
 # https://github.com/Win-Net/dnstt-DNS-changer
 # ═══════════════════════════════════════════════════════════
 
@@ -24,6 +24,7 @@ CHECK=${AUTO_RESTART_CHECK:-15}
 FAILS=0
 MAX_FAIL=${MAX_FAILURES:-2}
 PORT="${LOCAL_LISTEN##*:}"
+CONSECUTIVE_FULL_FAILS=0
 
 KNOWN_DNS_LIST=(
     "1.1.1.1" "1.0.0.1" "1.1.1.2" "1.0.0.2" "1.1.1.3" "1.0.0.3"
@@ -173,7 +174,7 @@ KNOWN_DNS_LIST=(
     "202.14.67.4" "202.14.67.14"
     "123.108.8.8"
     "202.188.0.133" "202.188.1.5"
-    "2.144.4.202" "10.202.10.10" "10.202.10.11"
+    "2.144.4.202"
     "178.22.122.100" "185.51.200.2"
     "78.157.42.100" "78.157.42.101"
     "185.55.225.25" "185.55.226.26"
@@ -181,7 +182,6 @@ KNOWN_DNS_LIST=(
     "185.231.182.126" "185.231.182.162"
     "78.158.171.6" "78.158.171.7"
     "5.202.100.100" "5.202.100.101"
-    "10.202.10.202" "10.202.10.102"
     "85.15.1.14" "85.15.1.15"
     "31.7.57.18" "31.7.57.26"
     "5.160.139.199" "5.160.139.200"
@@ -256,7 +256,7 @@ SCAN_SUBNETS=(
     "185.171.23" "79.175.131"
     "94.232.173" "5.200.200"
     "185.37.35" "194.36.174"
-    "2.144.4" "10.202.10"
+    "2.144.4"
     "4.2.2" "64.6.64" "64.6.65"
     "209.244.0" "216.146.35" "216.146.36"
 )
@@ -275,6 +275,18 @@ find_free_port() {
         fi
     done
     echo "19999"
+}
+
+is_blacklisted() {
+    local ip="$1"
+    if echo "$ip" | grep -qE '^10\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^172\.(1[6-9]|2[0-9]|3[01])\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^192\.168\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^127\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^169\.254\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^(22[4-9]|23[0-9]|24[0-9]|25[0-5])\.'; then return 0; fi
+    if echo "$ip" | grep -qE '^0\.'; then return 0; fi
+    return 1
 }
 
 nuke() {
@@ -376,11 +388,15 @@ real_test_dns() {
     local ip="$1"
     local dns_port="$2"
     local domain="$3"
+
+    if is_blacklisted "$ip"; then
+        return 1
+    fi
+
     local sport
     sport=$(find_free_port)
     local test_listen="127.0.0.1:${sport}"
 
-    # Kill any leftover on this port
     local old_pids
     old_pids=$(pgrep -f "dnstt-client.*${sport}" 2>/dev/null) || true
     for op in $old_pids; do kill -9 "$op" 2>/dev/null || true; done
@@ -389,7 +405,6 @@ real_test_dns() {
     fi
     sleep 1
 
-    # Start dnstt with this DNS
     local scan_pid
     if [ "${PROTOCOL:-udp}" = "dot" ]; then
         $BINARY -dot "${ip}:${dns_port}" -pubkey-file "$PUBKEY_FILE" "$domain" "$test_listen" &
@@ -399,18 +414,15 @@ real_test_dns() {
     scan_pid=$!
     sleep 5
 
-    # Check process alive
     if ! kill -0 $scan_pid 2>/dev/null; then
         return 1
     fi
 
-    # Check port open
     if ! ss -tlnp 2>/dev/null | grep -q ":${sport}"; then
         kill_scan_dnstt "$scan_pid" "$sport"
         return 1
     fi
 
-    # Real SOCKS test
     local ok=false
     if timeout 15 curl -s --socks5 "$test_listen" "http://cp.cloudflare.com" -o /dev/null 2>/dev/null; then
         ok=true
@@ -479,12 +491,15 @@ auto_scan() {
     local found=0
     local tested=0
 
-    # Phase 1: Known DNS
     log "INFO" "AUTO-SCAN: Phase 1 - Testing ${#SCAN_LIST[@]} known DNS (real connection)"
 
     for ip in "${SCAN_LIST[@]}"; do
         [ $found -ge $scan_count ] && break
         tested=$((tested + 1))
+
+        if is_blacklisted "$ip"; then
+            continue
+        fi
 
         if [ $((tested % 10)) -eq 0 ]; then
             log "INFO" "AUTO-SCAN: Progress: tested=$tested found=$found"
@@ -504,7 +519,6 @@ auto_scan() {
         fi
     done
 
-    # Phase 2: Random subnets
     if [ $found -lt $scan_count ]; then
         log "INFO" "AUTO-SCAN: Phase 2 - Random scanning (need $((scan_count - found)) more)"
 
@@ -514,6 +528,10 @@ auto_scan() {
             local ip="${subnet}.$((RANDOM % 254 + 1))"
             extra_tested=$((extra_tested + 1))
             tested=$((tested + 1))
+
+            if is_blacklisted "$ip"; then
+                continue
+            fi
 
             local dup=false
             for e in "${new_dns[@]}"; do
@@ -551,6 +569,7 @@ try_all_servers() {
             if is_alive; then
                 log "INFO" "Connected on ${DNS_SERVERS[$IDX]}"
                 FAILS=0
+                CONSECUTIVE_FULL_FAILS=0
                 return 0
             fi
         fi
@@ -558,12 +577,15 @@ try_all_servers() {
     done
 
     log "ERROR" "ALL $TOTAL servers failed!"
+    CONSECUTIVE_FULL_FAILS=$((CONSECUTIVE_FULL_FAILS + 1))
 
     source "$CONFIG_FILE" 2>/dev/null
     local scan_on=${AUTO_SCAN_ENABLED:-false}
+    local scan_trigger=${AUTO_SCAN_TRIGGER:-2}
 
-    if [ "$scan_on" = "true" ]; then
-        log "INFO" "AUTO-SCAN triggered: all servers down"
+    if [ "$scan_on" = "true" ] && [ $CONSECUTIVE_FULL_FAILS -ge $scan_trigger ]; then
+        log "INFO" "AUTO-SCAN triggered: $CONSECUTIVE_FULL_FAILS consecutive full failures (trigger=$scan_trigger)"
+        CONSECUTIVE_FULL_FAILS=0
         auto_scan
 
         if [ ${#DNS_SERVERS[@]} -gt 0 ]; then
@@ -585,6 +607,8 @@ try_all_servers() {
                 t2=$((t2 + 1))
             done
         fi
+    elif [ "$scan_on" = "true" ]; then
+        log "INFO" "Full fail $CONSECUTIVE_FULL_FAILS/$scan_trigger before auto-scan triggers"
     fi
 
     log "ERROR" "Waiting ${ALL_FAILED_WAIT:-30}s then retry from beginning..."
@@ -600,7 +624,7 @@ try_all_servers() {
 trap 'log "INFO" "Shutdown"; nuke; exit 0' SIGTERM SIGINT SIGHUP
 
 # MAIN
-log "INFO" "v2.0.0 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
+log "INFO" "v2.0.1 | Servers=$TOTAL | Check=${CHECK}s | MaxFail=$MAX_FAIL"
 
 if ! command -v curl &>/dev/null; then
     apt-get install -y -qq curl 2>/dev/null || yum install -y -q curl 2>/dev/null || true
@@ -620,6 +644,7 @@ while true; do
     if is_alive; then
         [ $FAILS -gt 0 ] && log "INFO" "Recovered after $FAILS fails"
         FAILS=0
+        CONSECUTIVE_FULL_FAILS=0
     else
         FAILS=$((FAILS + 1))
         log "ERROR" "NOT WORKING! Fail $FAILS/$MAX_FAIL on ${DNS_SERVERS[$IDX]}"
